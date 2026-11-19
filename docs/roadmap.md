@@ -57,3 +57,5 @@ The original non-root objective and evidence are preserved above. The owner now 
 
 - Offline MAT carrier reference implemented and host-tested; existing HAL burst parser traced to diagnostic-file path, not live write. Need genuine non-PCM output integration. [Reference](iec-mat-carrier-reference.md).
 - Independent optional privacy/debloat track P0 inventory complete (166 packages); targeted manifest audit pending. [Results](privacy-inventory-results.md). No changes to device. [Plan](privacy-audit.md).
+
+- Privacy manifest audit complete for 13/14 packages. See [manifest findings](privacy-manifest-results.md); owner-select optional reversible package changes, no firmware removal. Audio transport and deployment still unresolved.

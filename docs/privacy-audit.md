@@ -36,3 +36,7 @@ After actual package inventory, classify with evidence: KEEP/core, optional feat
 ## P0 result
 
 [Inventory results](privacy-inventory-results.md): 166 system packages, 157 enabled, 9 disabled, 34 UID 1000. No verified spyware or traffic attribution. Next targeted manifest audit with scripts/collect_privacy_details.ps1; all changes remain opt-in and independently reversible.
+
+## P1 manifest result
+
+[Targeted manifest audit](privacy-manifest-results.md) confirms analytics SDK declarations in BrowseHere and MagiConnect and remote diagnosis screen-sharing declarations. 13/14 packages inspected; BackgroundDetection permission denied. No automatic disable/removal. Suggested first reversible optional candidate: BrowseHere if unused.

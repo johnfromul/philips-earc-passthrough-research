@@ -1,0 +1,15 @@
+package,label,category,evidence_and_limitations
+com.tcl.browser,BrowseHere,OPTIONAL_FIRST,Firebase analytics and ad consent defaults true; unused browser
+com.tcl.magiconnectfree,MagiConnect,OPTIONAL_IF_UNUSED,Firebase analytics and Crashlytics; companion control
+com.tcl.smartalexa,Works with Alexa,OPTIONAL_IF_UNUSED,Usage stats and voice integration dependencies
+com.tcl.repairguide,Diagnosis,AUDIT_KEEP,RemoteDiagnosis and Agora mediaProjection declarations; local diagnostics
+com.tcl.smartlink.core,TCL Link,AUDIT_KEEP,Exported proxy/install services; caller authorization unknown
+com.tcl.channelplus,Live TV,AUDIT_KEEP,TV input service and boot services; possible EPG/input effects
+com.tcl.dashboard,TCL Home,AUDIT_KEEP,MQTT and dashboard; dependencies unknown
+com.tcl.usercenter,User Center,AUDIT_KEEP,Boot receiver/service; account dependencies
+com.tcl.ocean.instructions,User Guide,OPTIONAL_LATER,Boot receiver and GuideService
+com.tcl.t_solo,T-Solo,KEEP_AUDIO,Bluetooth ListenAloneActivity
+com.google.android.feedback,Market Feedback Agent,AUDIT_KEEP,BugReportService and log permissions
+com.android.tv.feedbackconsent,Tv Feedback Consent,KEEP,System UID and consent UI
+com.android.adservices.api,Android System,KEEP_SETTINGS_FIRST,Ad attribution services and permissions
+com.mediatek.backgrounddetection,Unknown,UNINSPECTED,APK pull permission denied

@@ -25,6 +25,7 @@ A reproducible investigation of Dolby TrueHD + Atmos playback from internal Andr
 | [Vendor diagnostic boundary](docs/vendor-diagnostic-boundary.md) | FAILED_TRANSACTION and native Dolby/LAPAF dispatch |
 | [MAT carrier reference](docs/iec-mat-carrier-reference.md) | Offline framing, debug parser distinction and host tests |
 | [Privacy audit](docs/privacy-audit.md) | Optional independent privacy/debloat track |
+| [Privacy manifest findings](docs/privacy-manifest-results.md) | Analytics declarations, remote diagnosis, reversible candidate triage |
 | [Privacy inventory results](docs/privacy-inventory-results.md) | 166 system packages, candidate triage, read-only manifest audit |
 | [Offline IEC client prototype](docs/iec-client-experiment.md) | APEX symlink resolved, four client sites, host verification only |
 | [Experimental firmware project](docs/custom-firmware-iec61937.md) | Stock-based IEC61937 design; read-only preflight and boot safety gates |
