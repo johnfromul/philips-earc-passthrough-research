@@ -36,3 +36,16 @@ Output private/stock_kernel_config_audit.json. It verifies the image against the
 Optional read-only device check: adb shell ls -l /proc/config.gz and adb shell uname -a. If config.gz is accessible, retrieve locally via adb pull /proc/config.gz private/kernel_config.gz.
 
 No live calls performed during this audit, no kernel changes, no device reboot or root, no exploit profile. Keep proprietary images private. The previously documented [virtual source fallback](virtual-hdmi-audio-source.md) is still a hypothesis.
+
+## Owner boot audit result — 2026-11-20
+
+Received stock_kernel_config_audit.json (SHA-256 cb6f2aaa620c77f343679d59548c349edd79001bc2229b4d5c241d8f9cc14e38). The owner successfully ran the offline audit against their extracted stock image; the image itself was not supplied for independent verification.
+
+- boot.img: 56,623,104 bytes, SHA-256 f4f5010d85c2b8d6bcda0670bdb781a51d7d509728e81b661988d2646cc9eaa1; Android header v4, 4096-byte page.
+- Kernel payload: 42,891,776 bytes, SHA-256 a9a9c063a6eaacc90c8aac4688e9dd06de732b930e02007f856f4b3520e773c5; raw arm64 Image; embedded configuration successfully extracted.
+- CONFIG_IKCONFIG=y, CONFIG_IKCONFIG_PROC=y, CONFIG_MODULES=y, CONFIG_MODULE_UNLOAD=y, CONFIG_MODVERSIONS=y, CONFIG_MODULE_SIG=y, CONFIG_MODULE_SIG_FORCE=n, CONFIG_MODULE_SIG_ALL=y, CONFIG_CFI_CLANG=y, CONFIG_CFI_PERMISSIVE=n, CONFIG_SHADOW_CALL_STACK=y, CONFIG_DEBUG_INFO_BTF=y, CONFIG_DEBUG_INFO_BTF_MODULES=y, CONFIG_SND=y, CONFIG_SND_SOC=y, CONFIG_SND_COMPRESS_OFFLOAD=y.
+- Live ADB uname: 5.15.192-android14-11 #1 SMP PREEMPT Sat Apr 25 03:50:48 UTC 2026 armv8lToybox. The owner confirmed /proc/config.gz is readable by file mode (0444; 44,424 bytes), but actual read access and comparison are pending. armv8l is consistent with the 32-bit userspace and does not contradict the ARM64 stock image.
+
+Interpretation: build-time mandatory module signing is off, but runtime enforcement, vendor policy and verified boot remain separate. CONFIG_MODULE_SIG_ALL enables signing during module installation at build time; it does not imply every shipped module has a standard appended signature. See [Linux 5.15 module signing](https://docs.kernel.org/5.15/admin-guide/module-signing.html). MODVERSIONS, strict CFI and SCS require preserving the matching ABI/toolchain constraints. Module unloading support is not proof that the active TV audio stack may be unloaded safely. No runtime replacement attempted.
+
+Next collect the live configuration using `adb pull /proc/config.gz private/kernel_config.gz`, then compare its selected keys with the audit. Full configuration equality, even if established, would not prove byte-identical running kernel or drivers. Collect the live audio module listing read-only, if accessible. Do not unload or load drivers, reboot, flash, change security settings or infer exploit compatibility from these results.
