@@ -37,3 +37,24 @@ The HAL also contains enum-name string _Is_Atmos_Stream_FW_flag (file offset 0x2
 ## Decision
 
 One offline sample framing check remains justified. It cannot by itself demonstrate the cause or a firmware fix. Existing DSP input transport, source-specific output constraints, and reported-status distinction still hold. Deployment remains blocked by lack of demonstrated working transport, exact regional recovery and supported development boot path. No HAL/DSP/boot patch produced.
+
+
+## Owner's actual Amaze TrueHD report (2026-11-19)
+
+private/truehd_alignment.json: 3228 bytes, SHA-256 085ae15716d21d93422a744c2c4318a29391a0952e6b443d23c5f3fc2e753bc4. The reported media hash 1779b6f1d20108c3b8404ed62c3477b67f817e80ccfb4fc93b1e953887d3da64 matches the original prior PC/TV hash. The report itself, not the commercial media bytes, was received in this step.
+- 22,928,814 bytes, 36,000 AUs, first major sync at AU0, 360 header candidates, all rate code 0. All 359 recorded sync gaps divisible by four; 174 (48.47%) not divisible by eight. Gaps range 8–128 AUs. Fixed groups start at sync in 92/2250 (4.09%) 16-AU groups and 56/1500 (3.73%) 24-AU groups. Neither statistic is an AU validity test.
+- Histogram contains exactly 35,999 deltas, range 19–84 input-timing units, 28,552 equal to 40; all are accepted by FrameReader without fallback. Sum = 1,439,960 timing units = 29.9991667 s to last AU start using the app's 48 kHz clock. Nominal 36,000*40/48000 = 30 s. Jitter exists but no demonstrated accumulated clock error. Histogram cannot determine maximum instantaneous timing deviation across the file.
+- Reopened exact parser ELF. 0x10d38 tests low three bits of r3, branches at 0x10d3a to 0x11038 for nonzero. That branch logs via 0x10d90, then clears state at 0x10d96–0x10dac and returns -2 (0x10dae–0x10db2). This is a genuine error path, not just a warning. The counter is reset/reduced by multiples of eight elsewhere as previously described. This is cause for caution against enabling this parser for the real stream, not proof of a runtime rejection: the raw track did not use it and no direct parser execution on the sample occurred. The report does not include complete CRC or payload checks.
+
+Decision: no evidence to justify turning on the native parser, changing the stream's sync words, dropping AUs or imposing an artificial 8-AU alignment requirement. Prior 16-AU and 24-AU playback already had normal sound without Atmos indication. A further clock-only A/B could be considered if measured timestamp jitter warrants it, but current evidence does not prioritize it over decoder/route investigation. No new playback needed now.
+
+## Metadata routing control check
+
+Rehashed audio.primary.merak.so (e47bfd65a6055987fcdfbc9a67166b8024061504d7c5d84e7e88b2b53cf10bad). __utils_judge_Metadata_source at Thumb VA 0x70180 reads parameters from Decoder via indirect calls at 0x70210 and 0x70280; literal references at 0x701e4 and 0x70256 resolve to user chmod lock (0x2d2a0) and hdmi_dolby_atmos_lock (0x2d710). Diagnostic logs both values. At 0x7040e and 0x70452, literals resolve to PcmR and PcmrKeepLastMD. 0x7048e calls MI_APAF_ParameterManager_SetParameter via PLT 0xce180, .rel.plt slot 0xd321c; the code passes four-byte value 1 on the identified keep branch. This is a PCM-renderer metadata-retention control, not evidence of Dolby object metadata generation. No setters invoked.
+
+Archived JOC and Minirama live logs show identical conditions before their divergent Atmos callbacks:
+- JOC 04:41:06.282: isChmodLockUser=0, isAtmosLock=0, primary_media_active=0, isKeep=1, then successful PcmrKeepLastMD=1. Atmos callback 04:41:06.441 =1.
+- Minirama 05:02:24.803–.804: same lock values, primary_media_active=0, isKeep=1; successful PcmrKeepLastMD=1; MLP callback and Atmos=0 at .981–.982.
+- v0.2.2 MAT captures also show the same zero lock values and successful keep parameter.
+
+Thus the observed lock/retention setting does not distinguish the working JOC from failed TrueHD and MAT; it cannot be identified as the cause on present evidence. Raw DSP flag and actual eARC payload remain unknown. Do not modify the setting on the assumption it will supply missing object metadata.
