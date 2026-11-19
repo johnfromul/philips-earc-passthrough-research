@@ -30,9 +30,9 @@ adb logcat -b all -v threadtime -T 1 > .\private\reports\live.log
 
 Stop with Ctrl+C after recording all observations. While a specific audio-only or tunnel test is active, run `collect.ps1 -Name test` or `collect_tunnel.ps1 -Name group16_bypass`; heavy dumps may finish after the test, so check timestamps and active tracks. Pull final logs with `scripts/collect_final.ps1`. These scripts never clear log buffers. Review raw reports locally; they can disclose device identifiers, app names, URLs and network addresses.
 
-## v0.2.2: MAT 192 kHz full tunnel
+## v0.2.2 / v0.2.3: MAT 192 kHz full tunnel
 
-Build and install an updated APK using the same signing key; existing samples stay in place. In Auto mode, run the Full A/V tunnel tests 8, 9, 10 (MAT192_IEC, MAT192_LE, MAT192_BE); capture each independently:
+Build and install an updated APK using the same signing key; existing samples stay in place. In Auto mode, select **MAT 192 kHz — 3 current tests** on the main screen of v0.2.3 (v0.2.2: Full A/V tunnel), then run tests 8, 9, 10 (MAT192_IEC, MAT192_LE, MAT192_BE); capture each independently:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\collect_native.ps1 -Source Probe -Mode Auto
