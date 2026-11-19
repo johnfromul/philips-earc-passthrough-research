@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 STOCK = "3d2fdf5363d86061f7b30855458e673a39cada336ec0359a12a11533362793e9"
 FDT = b"\xd0\x0d\xfe\xed"
 TABLE = b"\xd7\xb7\xab\x1e"
-AUDIO = re.compile(r"audio|aud[_-]|tvsnd|sound|earc|hdmi|aloop|loopback|offload|dsp|spdif|i2s|aif|dai-link", re.I)
+AUDIO = re.compile(r"audio|aud[_-]|tvsnd|sound|earc|hdmi|aloop|loopback|offload|dsp|spdif|i2s|aif|dai-link|mi_mad|mi_aucomm|mi_cm4_voice|npcm", re.I)
 PROP = re.compile(r"^(compatible|status|model|name|target|target-path|phandle|linux,phandle|reg|ranges|#.*cells|.*names|.*audio.*|.*sound.*|.*dai.*|.*clock.*|.*clk.*|.*parent.*|reg[-_]offset|.*interrupt.*|.*memory-region.*|.*mixing.*|.*loopback.*|.*endpoint.*|.*port.*|.*dma.*|.*format.*|.*rate.*|.*channel.*|.*route.*|.*mux.*|.*source.*|.*sink.*)$", re.I)
 MAX = 256 * 1024 * 1024
 
@@ -153,10 +153,24 @@ def summarize(nodes):
             v = props.get(k, b"")
             if len(v) == 4:
                 handles[struct.unpack(">I", v)[0]] = p
+    # Retain directly referenced memory regions and all register properties
+    # of the selected audio hardware blocks, rather than name-filtering them.
+    for p in list(chosen):
+        v = nodes[p].get("memory-region", b"")
+        if len(v) % 4 == 0:
+            for (h,) in struct.iter_unpack(">I", v):
+                if h in handles and h not in (0, 0xffffffff):
+                    chosen.add(handles[h])
     rows = []
     for p in sorted(chosen):
         props = nodes[p]
-        row = {"path": p, "properties": {k: describe(v) for k,v in props.items() if PROP.match(k)}}
+        full = (p.startswith("/mmap_info/") or "/mediatek-sound-register" in p
+                or "/mtk-tv-offload-soc" in p or "/digital-out-register" in p
+                or "/mtk-sound-dplayback-platform" in p or "/mtk-sound-capability" in p
+                or "/mtk-tv-offload-platform" in p or "/mtk-tvsnd-machine" in p)
+        row = {"path": p, "properties": {k: describe(v) for k,v in props.items() if full or PROP.match(k)}}
+        if p.startswith("/mmap_info/"):
+            row["note"] = "Stock memory mapping descriptor; not proof of live allocation or ownership"
         refs = {}
         for k in ("remote-endpoint", "memory-region", "sound-dai", "target"):
             v = props.get(k, b"")
@@ -269,7 +283,7 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--images", type=Path, default=ROOT/"private/stock_v670_us_au02/boot_audit_images")
     p.add_argument("--manifest", type=Path, default=ROOT/"private/stock_boot_audit_verified.json")
-    p.add_argument("--out", type=Path, default=ROOT/"private/stock_audio_dt_topology_v2.json")
+    p.add_argument("--out", type=Path, default=ROOT/"private/stock_audio_dt_topology_v3.json")
     a = p.parse_args()
     manifest = json.loads(a.manifest.read_text(encoding="utf-8-sig"))
     if manifest.get("stock_sha256") != STOCK:
