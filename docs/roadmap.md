@@ -37,13 +37,14 @@ Static claims re-verified on binaries pulled from the live TV (`private/verify_2
 
 **Conclusion:** without root/firmware changes there is no remaining path on V670. The data reaches the DSP; the Atmos layer is lost on the internal (MM) source. Leading hypothesis: `MatMlpOnly=1` for MM source makes the decoder use only the MLP base (non-Atmos) substream. Unproven.
 
-## Plan with root (pending: ESP-based access, 2026-11-20)
+## Plan with root (pending: GhostLock profile request #938, 2026-11-20)
 
 0. **Backup first.** Dump all partitions (at least boot/vendor_boot/vbmeta/dtbo/super/tclconfig/tvconfig and any calibration partitions) before writing anything. Keep the original V670 OTA ZIP (SHA-256 `3d2fdf53…`) as the stock baseline.
-1. **Extractor gate**: `setprop vendor.mtk.mkv.support.truehd true`, then MKV in TCL Media Center. Cheap; shows whether the native player route yields Atmos.
-2. **MatMlpOnly hypothesis** (highest value): make the MM path use `MatMlpOnly=0` (runtime hook, e.g. Frida on the audio HAL process, before any file patch), replay the existing TRUEHD_GROUP16 tunnel test, watch `isAtmos` and the soundbar.
-3. Only if 2 fails: IEC61937 passthrough (client filter + HAL `utils_isPassthroughSupported` + `utils_earc_set_decoder_format` + eARC-only policy profile). Offline client prototype exists: [iec-client-experiment](iec-client-experiment.md), [earc-endpoint-and-policy](earc-endpoint-and-policy.md), [iec-mat-carrier-reference](iec-mat-carrier-reference.md).
-4. Persist whatever works (Magisk module / overlay), then regression: PCM, E-AC3 JOC, HDMI Atmos, CEC, standby, OTA behavior.
+1. **GhostLock profile**: Issue filed at [YuKongA/ghostlock-app #938](https://github.com/YuKongA/ghostlock-app/issues/938) for MT5896 / V670 kernel 5.15.192.
+2. **MatMlpOnly runtime hook** (highest value): Non-invasive Frida hook script prepared in `tools/hook_mat_mlp.js`. Traces `_MI_LAPAF_FILTER_DecoderCommon_SetMatMlpOnly` in `libmi3_audio_hal.so` and overrides `MatMlpOnly: 1 -> 0` during MM playback. See [mat-mlp-hook-strategy](mat-mlp-hook-strategy.md).
+3. **Extractor gate**: `setprop vendor.mtk.mkv.support.truehd true`, then MKV in TCL Media Center. Cheap; shows whether the native player route yields Atmos.
+4. Only if 2 fails: IEC61937 passthrough (client filter + HAL `utils_isPassthroughSupported` + `utils_earc_set_decoder_format` + eARC-only policy profile). Offline client prototype exists: [iec-client-experiment](iec-client-experiment.md), [earc-endpoint-and-policy](earc-endpoint-and-policy.md), [iec-mat-carrier-reference](iec-mat-carrier-reference.md).
+5. Persist whatever works (Magisk module / overlay), then regression: PCM, E-AC3 JOC, HDMI Atmos, CEC, standby, OTA behavior.
 
 ## Debloat (no root needed, reversible)
 
