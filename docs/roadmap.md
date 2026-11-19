@@ -28,7 +28,8 @@ Goal: MKV with TrueHD Atmos in Moonfin / internal Android apps, without root or 
 - [ ] Check exact openDirectOutput selection and hardware profiles; determine missing IEC profile's origin.
 - [x] Identify source-specific MatMlpOnly initialization (Mat + MM => 1, otherwise 0 within Mat block), and HAL parameter storage/readback. [Static analysis](mat-mlp-only-analysis.md).
 - [x] Resolve MatMlpOnly dispatch via packed ELF relocations, confirm store-only setter and downstream compressed-device write boundary. Identify parser eligibility exclusion for TrueHD/MAT. [Analysis](decoder-dispatch-and-parser.md).
-- [ ] Inspect advertised Codec2 audio routes and vendor component binaries collected with scripts/collect_codec_routes.ps1; determine whether an app-accessible Atmos-preserving output exists.
+- [x] Inspect Codec2 XMLs and vendor binaries: no TrueHD/MAT decoder MIME declared, MAT capture MIME and wrapper controls identified. [Analysis](codec2-route-analysis.md).
+- [ ] Run v0.2.4 Inspect audio codecs; confirm effective runtime MediaCodecList. If no candidate, deprioritize MediaCodec.
 - [ ] Trace any indirect DSP consumer and semantics; MatMlpOnly causal role remains unproven.
 - [ ] Compare source-specific decoder initialization and AStream behavior (HDMI_IN vs MM_IN), in particular _dspCommFunc_LAPAF_StartDecoderDevice and surrounding call sites. Inspect native parameter and metadata interfaces read-only; do not assume status flag causes metadata loss.
 - [ ] Compare a working firmware/model if available through lawful read-only extraction and identical test procedure.

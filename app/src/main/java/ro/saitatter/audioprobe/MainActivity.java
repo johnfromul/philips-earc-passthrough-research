@@ -29,7 +29,7 @@ public final class MainActivity extends Activity {
     private Spinner modes, outcome;
     private TextView output, state;
     private ScrollView scroll;
-    private Button inspect, open, play, stop, mark, tunnel, matTunnel;
+    private Button inspect, open, play, stop, mark, tunnel, matTunnel, codecInspect;
     private AudioManager manager;
     private final Object logLock=new Object();
 
@@ -42,11 +42,15 @@ public final class MainActivity extends Activity {
         if(dir==null) dir=getFilesDir();
         logFile=new File(dir,"probe.log");
         LinearLayout root=new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL); root.setPadding(24,16,24,16);
-        TextView title=new TextView(this); title.setText("Audio Passthrough Tester  •  v0.2.3"); title.setTextSize(25); root.addView(title);
+        TextView title=new TextView(this); title.setText("Audio Passthrough Tester  •  v0.2.4"); title.setTextSize(25); root.addView(title);
         TextView warn=new TextView(this); warn.setText("Turn soundbar volume LOW. Select eARC. STOP immediately if noise occurs. No automatic playback."); warn.setTextSize(15); root.addView(warn);
         matTunnel=new Button(this);
         matTunnel.setText("MAT 192 kHz — 3 current tests"); matTunnel.setAllCaps(false);
         matTunnel.setOnClickListener(v->startActivity(new android.content.Intent(this,TunnelActivity.class).putExtra(TunnelActivity.EXTRA_MAT_ONLY,true)));
+        codecInspect=new Button(this);
+        codecInspect.setText("Inspect audio codecs — no playback"); codecInspect.setAllCaps(false);
+        codecInspect.setOnClickListener(v->runJob(this::inspectAudioCodecs));
+        root.addView(codecInspect,new LinearLayout.LayoutParams(-1,-2));
         root.addView(matTunnel,new LinearLayout.LayoutParams(-1,-2));
         TextView previous=new TextView(this); previous.setText("Previous diagnostics (optional)"); root.addView(previous);
         modes=new Spinner(this); ArrayAdapter<ProbeMode> choices=new ArrayAdapter<>(this,android.R.layout.simple_spinner_item,ProbeMode.values()); choices.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item); modes.setAdapter(choices); root.addView(modes);
@@ -61,7 +65,7 @@ public final class MainActivity extends Activity {
         mark=button(results,"Record result",v->{ if(outcome.getSelectedItemPosition()>0) log("OBSERVED by user ["+selected().name()+"]: "+outcome.getSelectedItem()); });
         state=new TextView(this); root.addView(state); state.setText("Ready | samples and report: "+dir);
         scroll=new ScrollView(this); output=new TextView(this); output.setTextSize(13); output.setTypeface(android.graphics.Typeface.MONOSPACE); output.setTextIsSelectable(false); scroll.addView(output); root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
-        setContentView(root); matTunnel.requestFocus();
+        setContentView(root); codecInspect.requestFocus();
         log("START app="+getPackageName()+" pid="+android.os.Process.myPid()+" model="+Build.MODEL+" fingerprint="+Build.FINGERPRINT+" ABIs="+Arrays.toString(Build.SUPPORTED_ABIS));
         log("Samples: "+dir+" (prepare on PC, then adb push)");
     }
@@ -83,8 +87,51 @@ public final class MainActivity extends Activity {
         if(busy) return; busy=true; cancel=false; controls(false);
         worker.execute(()->{try{job.run();}catch(Exception e){log("FAIL: "+e.getClass().getSimpleName()+": "+e.getMessage()); Log.e(TAG,"Job failed",e);}finally{runOnUiThread(()->{busy=false; controls(true);});}});
     }
-    private void controls(boolean enabled){ tunnel.setEnabled(enabled); matTunnel.setEnabled(enabled); inspect.setEnabled(enabled); open.setEnabled(enabled); play.setEnabled(enabled); modes.setEnabled(enabled); mark.setEnabled(enabled); stop.setEnabled(!enabled); state.setText(enabled?"Ready | result: "+logFile:"Running — press STOP if noise occurs"); if(!enabled)stop.requestFocus(); else play.requestFocus(); }
+    private void controls(boolean enabled){ tunnel.setEnabled(enabled); matTunnel.setEnabled(enabled); codecInspect.setEnabled(enabled); inspect.setEnabled(enabled); open.setEnabled(enabled); play.setEnabled(enabled); modes.setEnabled(enabled); mark.setEnabled(enabled); stop.setEnabled(!enabled); state.setText(enabled?"Ready | result: "+logFile:"Running — press STOP if noise occurs"); if(!enabled)stop.requestFocus(); else play.requestFocus(); }
     private String device(AudioDeviceInfo d) {return d==null?"none":("id="+d.getId()+" type="+d.getType()+" name="+d.getProductName());}
+    private void inspectAudioCodecs() throws IOException {
+        File report=new File(dir,"codec_routes.log");
+        try(PrintWriter w=new PrintWriter(new FileWriter(report,false))) {
+            w.println("Audio codec inventory v0.2.4 fingerprint="+Build.FINGERPRINT);
+            w.println("No codec is instantiated or playback started.");
+            for(int kind:new int[]{MediaCodecList.REGULAR_CODECS,MediaCodecList.ALL_CODECS}){
+                w.println("=== "+(kind==MediaCodecList.ALL_CODECS?"ALL_CODECS":"REGULAR_CODECS")+" ===");
+                MediaCodecList list=new MediaCodecList(kind);
+                for(MediaCodecInfo info:list.getCodecInfos()){
+                    if(cancel)break;
+                    if(info.isEncoder())continue;
+                    for(String type:info.getSupportedTypes()){
+                        if(!type.toLowerCase(Locale.US).startsWith("audio/"))continue;
+                        w.println("DECODER "+info.getName()+" canonical="+info.getCanonicalName()+" vendor="+info.isVendor()+" alias="+info.isAlias()+" type="+type);
+                        try{
+                            MediaCodecInfo.AudioCapabilities a=info.getCapabilitiesForType(type).getAudioCapabilities();
+                            if(a!=null)w.println("  channelsMax="+a.getMaxInputChannelCount()+" sampleRates="+Arrays.toString(a.getSupportedSampleRateRanges())+" bitrate="+a.getBitrateRange());
+                        }catch(Exception e){w.println("  capabilities error="+e);}
+                    }
+                }
+                for(String mime:new String[]{"audio/true-hd","audio/vnd.dolby.mlp","audio/truehd","audio/vnd.dolby.mat","audio/ac3","audio/eac3","audio/eac3-joc"}){
+                    if(cancel)break;
+                    try{
+                        MediaFormat format=new MediaFormat(); format.setString(MediaFormat.KEY_MIME,mime);
+                        w.println("FIND mime="+mime+" decoder="+list.findDecoderForFormat(format));
+                    }catch(Exception e){w.println("FIND mime="+mime+" error="+e);}
+                    int channels=mime.equals("audio/ac3")||mime.startsWith("audio/eac3")?6:8;
+                    try{
+                        MediaFormat format=MediaFormat.createAudioFormat(mime,48000,channels);
+                        w.println("FIND mime="+mime+" rate=48000 channels="+channels+" decoder="+list.findDecoderForFormat(format));
+                    }catch(Exception e){w.println("FIND mime="+mime+" 48000 error="+e);}
+                    if(mime.equals("audio/vnd.dolby.mlp")||mime.equals("audio/vnd.dolby.mat")){
+                        try{
+                            w.println("FIND mime="+mime+" rate=192000 channels=8 decoder="+list.findDecoderForFormat(MediaFormat.createAudioFormat(mime,192000,8)));
+                        }catch(Exception e){w.println("FIND mime="+mime+" 192000 error="+e);}
+                    }
+                }
+            }
+            w.println("END cancelled="+cancel);
+            if(w.checkError())throw new IOException("Could not write codec inventory");
+        }
+        log("Audio codec inventory saved: "+report);
+    }
     private void capabilities(){
         log("=== CAPABILITIES ===");
         for(AudioDeviceInfo d:manager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)){

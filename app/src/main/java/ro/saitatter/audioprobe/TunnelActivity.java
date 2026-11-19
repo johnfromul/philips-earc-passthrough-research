@@ -68,7 +68,7 @@ public final class TunnelActivity extends Activity implements SurfaceHolder.Call
         LinearLayout root=new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL); root.setPadding(20,12,20,12);
         boolean matOnly=getIntent().getBooleanExtra(EXTRA_MAT_ONLY,false);
         TextView heading=new TextView(this); heading.setTextSize(22);
-        heading.setText(matOnly?"MAT 192 kHz — current tests (v0.2.3)":"All A/V tunnel tests (v0.2.3)"); root.addView(heading);
+        heading.setText(matOnly?"MAT 192 kHz — current tests (v0.2.4)":"All A/V tunnel tests (v0.2.4)"); root.addView(heading);
         state=new TextView(this); state.setTextSize(16); state.setText("Keep soundbar volume low. Select a test, then Start."); root.addView(state);
         modes=new Spinner(this);
         bind(modes,matOnly?new Mode[]{Mode.MAT192_IEC,Mode.MAT192_LE,Mode.MAT192_BE}:Mode.values()); root.addView(modes);
@@ -84,7 +84,7 @@ public final class TunnelActivity extends Activity implements SurfaceHolder.Call
         observation=new Spinner(this); bind(observation,new String[]{"Audio result","Atmos + normal sound","Dolby Surround + normal sound","PCM + normal sound","Other normal sound","No sound","Noise / beep","Failed"}); results.addView(observation,new LinearLayout.LayoutParams(0,-2,2));
         picture=new Spinner(this); bind(picture,new String[]{"Video result","Moving video","Frozen picture","Black screen","Not sure"}); results.addView(picture,new LinearLayout.LayoutParams(0,-2,2));
         record=button(results,"Record result",()->{if(lastMode!=null)log("OBSERVED mode="+lastMode.name()+" session="+lastSession+" audio="+observation.getSelectedItem()+" video="+picture.getSelectedItem());});
-        setContentView(root); update(); modes.requestFocus(); log("START v0.2.3 matOnly="+matOnly+" pid="+android.os.Process.myPid()+" fingerprint="+Build.FINGERPRINT+" dir="+dir);
+        setContentView(root); update(); modes.requestFocus(); log("START v0.2.4 matOnly="+matOnly+" pid="+android.os.Process.myPid()+" fingerprint="+Build.FINGERPRINT+" dir="+dir);
     }
     private <T> void bind(Spinner s,T[] items){ArrayAdapter<T> a=new ArrayAdapter<>(this,android.R.layout.simple_spinner_item,items);a.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);s.setAdapter(a);}
     private Button button(LinearLayout r,String t,Runnable click){Button b=new Button(this);b.setText(t);b.setAllCaps(false);b.setOnClickListener(v->click.run());r.addView(b,new LinearLayout.LayoutParams(0,-2,1));return b;}
