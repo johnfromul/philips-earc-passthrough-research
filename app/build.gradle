@@ -1,0 +1,16 @@
+plugins { id 'com.android.application' }
+android {
+    namespace 'ro.saitatter.audioprobe'
+    compileSdk 34
+    defaultConfig {
+        applicationId 'ro.saitatter.audioprobe'
+        minSdk 31
+        targetSdk 34
+        versionCode 1
+        versionName '0.1.0'
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+}
