@@ -55,3 +55,16 @@ First offline extraction targets system (469409792 bytes), vendor (343285760), s
 Run scripts/extract_stock_ota.ps1 on Windows x64, with the actual local ZIP path or enter it at the prompt. The script checks the exact package hash, reruns the manifest inspector, downloads the official payload-dumper-go 2.1.0 x64 archive and verifies its published SHA-256 before executing, extracts only those four images, and checks each output length and SHA-256 against the manifest. Report private/stock_images_verified.json. This is not verification of the OTA signature or installed-device compatibility. No device commands or modifications. Keep images local; next inspect files from EROFS/ext4 and compare four known audio hashes from preflight. If matches, the shared binary analysis applies but the entire image remains unverified. If different, disassemble actual on-device binaries only. Need an exact GB AU04 stock/recovery package and confirmed snapshot state before any hardware trial.
 
 Tool release: https://github.com/ssut/payload-dumper-go/releases/tag/2.1.0 ; CLI: https://github.com/ssut/payload-dumper-go/blob/main/README.md . Script not yet executed on the owner's 2.2GB archive.
+
+## Verified offline extraction and next file-level audit
+
+Owner report stock_images_verified.json (2323 bytes, SHA-256 08105a21761fda95d1b790e13472af2dc81d6a2b3d68ce29aad35e28f6495925) confirms all four extracted images match the stock manifest size and SHA-256. Tool version 2.1.0. Neither OTA signature verification nor installed-device compatibility is established.
+
+Next run tools/compare_stock_audio.py under WSL/Linux as a normal user, with erofs-utils and e2fsprogs installed. It rechecks exact image hashes, identifies EROFS/ext4 by magic, extracts using fsck.erofs or read-only debugfs (no mounts), and compares the system ARM32 client, TCL tcore APEX ARM32 client, vendor HAL and primary policy against the preflight hashes. It retains an offline Linux workspace in the user's home directory; allow several GB of free WSL disk space. The original images remain unchanged. Missing files and unsupported image/APEX layouts are reported, not silently accepted. The report is private/stock_audio_compare.json. This tool has not yet run on the actual images; filesystem extraction may be version-dependent. A match of all four roles validates only those exact files, not other parts of US AU02 versus GB AU04.
+
+Windows PowerShell from repo root (WSL distro already set up):
+    wsl -l -v
+    wsl -e bash -lc "sudo apt update && sudo apt install -y erofs-utils e2fsprogs python3"
+    wsl -e python3 tools/compare_stock_audio.py
+
+Reference: https://manpages.debian.org/trixie/erofs-utils/fsck.erofs.1.en.html ; debugfs is read-only unless -w is supplied. If WSL is missing, install a supported Linux distribution first. Do not run the extraction script as root. Do not repack/sign/flash yet; exact recovery, supported boot development path, and snapshot state remain unresolved.
