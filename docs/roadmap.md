@@ -65,3 +65,5 @@ The original non-root objective and evidence are preserved above. The owner now 
 - Exact-stock AudioPolicy generator passed (owner report); live endpoint inventory identifies MediaTek card0 playback D0/D1/D2/D9 and compressed D12–16, names denied. Six relevant driver files listed; targeted read-only driver collection pending. [Endpoint follow-up](earc-endpoint-and-policy.md). No deployment.
 
 - Driver collection: shell pull denied on all six modules; loaded non-JP audio stack identified. Fallback offline stock vendor_dlkm extraction and selected driver archive added. Live byte identity and endpoint mapping unresolved.
+
+- Stock driver archive verified (all six hashes and listed sizes); live byte identity unknown. D9 common PCM registration and conversion boundary resolved; TrueHD bypass enum slot unimplemented in HAL_MAD_SetAudioParam2; existing MAT HDMI bypass DSP parameter writer located. Continue tracing predicates with existing binaries, no new device collection required. [Kernel audit](kernel-audio-driver-audit.md).
