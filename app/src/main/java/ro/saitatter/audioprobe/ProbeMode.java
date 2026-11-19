@@ -16,7 +16,13 @@ enum ProbeMode {
     MAT_BE("MAT RAW BE payload 48k 7.1 (experimental)",FrameReader.Kind.MAT_BE,"truehd.matbe",19,48000,AudioFormat.CHANNEL_OUT_7POINT1_SURROUND,false,false),
     MAT_LE("MAT RAW LE payload 48k 7.1 (experimental)",FrameReader.Kind.MAT_LE,"truehd.matle",19,48000,AudioFormat.CHANNEL_OUT_7POINT1_SURROUND,false,false),
     MAT_192("MAT RAW BE payload 192k 7.1 (experimental)",FrameReader.Kind.MAT_BE,"truehd.matbe",19,192000,AudioFormat.CHANNEL_OUT_7POINT1_SURROUND,false,false),
-    MAT_SYNC("MAT RAW BE + HW AV Sync (experimental)",FrameReader.Kind.MAT_BE,"truehd.matbe",19,48000,AudioFormat.CHANNEL_OUT_7POINT1_SURROUND,false,true);
+    MAT_SYNC("MAT RAW BE + HW AV Sync (experimental)",FrameReader.Kind.MAT_BE,"truehd.matbe",19,48000,AudioFormat.CHANNEL_OUT_7POINT1_SURROUND,false,true),
+    IEC_STEREO_48("IEC 48k stereo — OPEN ONLY",FrameReader.Kind.IEC,"truehd.iec",13,48000,AudioFormat.CHANNEL_OUT_STEREO,false,false),
+    IEC_STEREO_192("IEC 192k stereo — OPEN ONLY",FrameReader.Kind.IEC,"truehd.iec",13,192000,AudioFormat.CHANNEL_OUT_STEREO,false,false),
+    IEC_51_192("IEC 192k 5.1 — OPEN ONLY",FrameReader.Kind.IEC,"truehd.iec",13,192000,AudioFormat.CHANNEL_OUT_5POINT1,false,false),
+    IEC_71_48("IEC 48k 7.1 — OPEN ONLY",FrameReader.Kind.IEC,"truehd.iec",13,48000,AudioFormat.CHANNEL_OUT_7POINT1_SURROUND,false,false),
+    MAT_IEC_48("MAT encoding + full IEC burst 48k 7.1 (experimental)",FrameReader.Kind.IEC,"truehd.iec",19,48000,AudioFormat.CHANNEL_OUT_7POINT1_SURROUND,false,false),
+    MAT_IEC_192("MAT encoding + full IEC burst 192k 7.1 (experimental)",FrameReader.Kind.IEC,"truehd.iec",19,192000,AudioFormat.CHANNEL_OUT_7POINT1_SURROUND,false,false);
     final String label, file; final FrameReader.Kind kind; final int encoding, rate, mask; final boolean offload, sync;
     ProbeMode(String label, FrameReader.Kind kind, String file, int encoding, int rate, int mask, boolean offload, boolean sync) {
         this.label=label; this.kind=kind; this.file=file; this.encoding=encoding; this.rate=rate; this.mask=mask; this.offload=offload; this.sync=sync;

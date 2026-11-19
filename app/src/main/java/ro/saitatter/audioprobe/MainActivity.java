@@ -42,7 +42,7 @@ public final class MainActivity extends Activity {
         if(dir==null) dir=getFilesDir();
         logFile=new File(dir,"probe.log");
         LinearLayout root=new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL); root.setPadding(24,16,24,16);
-        TextView title=new TextView(this); title.setText("Audio Passthrough Tester  •  v0.1"); title.setTextSize(25); root.addView(title);
+        TextView title=new TextView(this); title.setText("Audio Passthrough Tester  •  v0.1.1"); title.setTextSize(25); root.addView(title);
         TextView warn=new TextView(this); warn.setText("Turn soundbar volume LOW. Select eARC. STOP immediately if noise occurs. No automatic playback."); warn.setTextSize(15); root.addView(warn);
         modes=new Spinner(this); ArrayAdapter<ProbeMode> choices=new ArrayAdapter<>(this,android.R.layout.simple_spinner_item,ProbeMode.values()); choices.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item); modes.setAdapter(choices); root.addView(modes);
         LinearLayout buttons=new LinearLayout(this); root.addView(buttons);
@@ -117,6 +117,7 @@ public final class MainActivity extends Activity {
             log("BUILT session="+at.getAudioSessionId()+" state="+at.getState()+" encoding="+at.getAudioFormat()+" rate="+at.getSampleRate()+" channels="+at.getChannelCount()+" bufferFrames="+at.getBufferSizeInFrames()+" isOffloadedPlayback="+at.isOffloadedPlayback());
             if(at.getState()!=AudioTrack.STATE_INITIALIZED)throw new IOException("Track not initialized");
             if(!actuallyPlay){log("OPEN_ONLY accepted; no playback or route validation"); return;}
+            if(m.label.contains("OPEN ONLY")) throw new IOException("This mode is a capability probe only; use Open only. Carrier is not validated for this configuration.");
             File f=new File(dir,m.file); if(!f.isFile())throw new FileNotFoundException(f.toString());
             long total=0, units=0, lastReport=0;
             try(FrameReader reader=new FrameReader(f,m.kind)){
