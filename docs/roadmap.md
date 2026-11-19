@@ -31,7 +31,8 @@ Goal: MKV with TrueHD Atmos in Moonfin / internal Android apps, without root or 
 - [x] Inspect Codec2 XMLs and vendor binaries: no TrueHD/MAT decoder MIME declared, MAT capture MIME and wrapper controls identified. [Analysis](codec2-route-analysis.md).
 - [x] Run v0.2.4 Inspect audio codecs: both lists return null for every tested TrueHD/MAT MIME; AC3/EAC3/JOC controls resolve. [Runtime results](runtime-codecs-and-bypass.md). Public MediaCodec alternative closed for this firmware.
 - [x] Locate TrueHD bypass names in private enum tables; inspect MS12 passthrough setter (no routing change in body). No demonstrated public control.
-- [ ] Inspect read-only vendor service diagnostics (MS12, AudioExt, TclAudio); if unavailable, record limitations and pursue supported OEM route.
+- [x] Attempt read-only vendor dumpsys diagnostics: all four FAILED_TRANSACTION; record limitation and inspect MS12/LAPAF dispatch. [Evidence](vendor-diagnostic-boundary.md).
+- [ ] Obtain OEM clarification or a supported firmware route; [English report draft](upstream-report.md). No further speculative playback.
 - [ ] Trace any indirect DSP consumer and semantics; MatMlpOnly causal role remains unproven.
 - [ ] Compare source-specific decoder initialization and AStream behavior (HDMI_IN vs MM_IN), in particular _dspCommFunc_LAPAF_StartDecoderDevice and surrounding call sites. Inspect native parameter and metadata interfaces read-only; do not assume status flag causes metadata loss.
 - [ ] Compare a working firmware/model if available through lawful read-only extraction and identical test procedure.

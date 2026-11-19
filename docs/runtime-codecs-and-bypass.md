@@ -33,3 +33,7 @@ audio.primary.merak.so (SHA-256 e47bfd65a6055987fcdfbc9a67166b8024061504d7c5d84e
 - utils_isPassthroughSupported, 0x70bd8, returns true for TrueHD main format 0x0e000000 at 0x70c16–0x70c1e and MAT 0x24000000 at 0x70bee–0x70bfa. This is a format-eligibility predicate only, not a claim of actual lossless Atmos passthrough.
 
 All static observations are firmware-specific. No changes to vendor parameters, privileges, process identity or firmware. Existing tests already show the input is recognized as TrueHD but reports Atmos=0, contrasting with working JOC/HDMI. Output flags cannot restore missing objects. Next read-only step: inspect publicly accessible dumpsys diagnostics of the already observed vendor services, without invoking transactions or setters. If dumps are unavailable or uninformative, record the limitation and pursue OEM supported route/firmware correction rather than speculative playback permutations.
+
+## Follow-up
+
+All four dumpsys vendor-service transactions failed. See [diagnostic boundary and MS12/LAPAF dispatch](vendor-diagnostic-boundary.md). No specific permission cause is established.

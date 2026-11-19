@@ -22,6 +22,8 @@ A reproducible investigation of Dolby TrueHD + Atmos playback from internal Andr
 | [HDMI comparison](docs/hdmi-comparison.md) | Working hardware path and v0.2.2 test design |
 | [Minirama retest](docs/minirama-retest.md) | Different stream counters; same Dolby Surround and isAtmos=0 |
 | [Second TrueHD sample](docs/truehd-second-sample.md) | Attempted alternate sample; identity verification failed, retest required |
+| [Vendor diagnostic boundary](docs/vendor-diagnostic-boundary.md) | FAILED_TRANSACTION and native Dolby/LAPAF dispatch |
+| [OEM report draft](docs/upstream-report.md) | Reproduction and questions for TCL / MediaTek |
 | [Runtime codecs and vendor parameters](docs/runtime-codecs-and-bypass.md) | Runtime exclusion, internal bypass enum tables, MS12 interface analysis |
 | [Codec2 inventory](docs/codec2-route-analysis.md) | No TrueHD/MAT decoder declared in XML or found at runtime |
 | [Decoder dispatch and parser](docs/decoder-dispatch-and-parser.md) | Relocation-resolved setter, parser eligibility and Codec2 next step |
