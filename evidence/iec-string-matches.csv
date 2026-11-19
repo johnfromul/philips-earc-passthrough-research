@@ -1,0 +1,11 @@
+elf_path,string,file_offset_hex
+apex/com.tcl.tcore/lib/libaudioclient.so,remove support direct IEC61937,0x275ed
+apex/com.tcl.tcore/lib/libaudioclient.so,not support direct IEC61937,0x26bdb
+apex/com.tcl.tcore/lib/libaudioclient.so,not support offload IEC61937,0x24761
+apex/com.tcl.tcore/lib/libaudioclient.so,can not create track,0x2504d
+apex/com.tcl.tcore/lib/libaudioclient.so,/proc/%d/cmdline,0x24711
+system/lib/libaudioclient.so,remove support direct IEC61937,0x275ed
+system/lib/libaudioclient.so,not support direct IEC61937,0x26bdb
+system/lib/libaudioclient.so,not support offload IEC61937,0x24761
+system/lib/libaudioclient.so,can not create track,0x2504d
+system/lib/libaudioclient.so,/proc/%d/cmdline,0x24711

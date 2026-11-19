@@ -1,0 +1,22 @@
+source_line,app_timestamp,mode,observed_result
+90,02:20:57.803,PCM,PCM + normal sound
+124,02:21:42.837,PCM,PCM + normal sound
+131,02:22:11.953,EAC3,Other / failed
+159,02:22:50.609,TRUEHD_RAW,PCM + normal sound
+187,02:23:31.044,TRUEHD_OFFLOAD,Beep / noise
+210,02:24:07.168,TRUEHD_SYNC,Other / failed
+216,02:24:27.611,IEC,Other / failed
+222,02:24:42.441,IEC_SYNC,Other / failed
+234,02:25:05.976,MAT_BE,Other / failed
+289,02:26:20.555,MAT_LE,No sound
+301,02:26:43.055,MAT_192,Other / failed
+313,02:27:00.732,MAT_SYNC,Other / failed
+341,02:32:08.261,TRUEHD_RAW,Dolby Surround + normal sound
+369,02:32:49.190,MAT_LE,No sound
+381,02:33:16.461,TRUEHD_SYNC,Other / failed
+389,02:40:25.070,IEC_STEREO_48,Other / failed
+395,02:40:36.614,IEC_STEREO_192,Other / failed
+401,02:40:45.029,IEC_51_192,Other / failed
+407,02:40:52.263,IEC_71_48,Other / failed
+435,02:41:31.638,MAT_IEC_48,No sound
+463,02:42:00.261,MAT_IEC_192,No sound

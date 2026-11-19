@@ -1,0 +1,8 @@
+session,mode,rendered_callbacks,last_rendered_us,audio_head,bytes,audio_units,observation_audio,observation_video
+785,PCM,736,24500000,1176960,14372352,1247,Noise / beep,Moving video
+793,TRUEHD,610,20300000,972048,14236736,24623,Noise / beep,Moving video
+801,TRUEHD_CODEC_FIRST,612,20366666,975888,14308784,24707,Noise / beep,Moving video
+809,TRUEHD_GROUP16,716,23833333,1148064,17756484,1826,PCM + normal sound,Moving video
+817,TRUEHD_GROUP24,716,23833333,1146864,17752280,1217,PCM + normal sound,Moving video
+825,TRUEHD_GROUP16,716,23833333,1149408,17789192,1829,Dolby Surround + normal sound,Moving video
+833,TRUEHD_GROUP24,715,23800000,1148640,17785008,1219,Dolby Surround + normal sound,Moving video

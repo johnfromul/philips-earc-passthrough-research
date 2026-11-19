@@ -8,3 +8,27 @@ reports/
 *.iml
 __pycache__/
 hosttest/
+
+# Never commit locally extracted proprietary binaries, recordings or device dumps.
+/private/
+/firmware_libs/
+/stage3/
+*.so
+*.apk
+*.keystore
+*.jks
+*.log
+*.zip
+*.thd
+*.iec
+*.matbe
+*.matle
+*.mka
+*.mkv
+properties.txt
+libraries.txt
+processes.txt
+hal_services.txt
+*_maps.txt
+alsa_*.txt
+linker_config.txt
