@@ -45,4 +45,4 @@ No root/system modifications or SELinux changes. Do not spoof hardware source or
 
 ## Optional owner-authorized firmware research track
 
-The original non-root objective and evidence are preserved above. The owner now requests a stock-based firmware experiment for IEC61937. See [firmware project](custom-firmware-iec61937.md). F0 read-only preflight pending; no compatible recovery or unlocked development configuration demonstrated, no image generated.
+The original non-root objective and evidence are preserved above. The owner now requests a stock-based firmware experiment for IEC61937. See [firmware project](custom-firmware-iec61937.md). F0 preflight captured: locked, green, enforcing, EROFS and Virtual A/B snapshot mappings. Stock package metadata, merge status, exact recovery and supported owner unlock remain unresolved; no image generated.
