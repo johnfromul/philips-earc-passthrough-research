@@ -30,7 +30,7 @@ mi_apaf_compress_open (0x1501a0), conditional branch at 0x1502f6:
 | v0.2.2 (04:33:15) | 4 | 28 | 0 | 1 | 2 |
 | Minirama (05:02:24) | 4 | 28 | 0 | 1 | 2 |
 
-All extracted from _tv_adec_in_config log lines in the private ZIPs; no such line found in hdmi_working.zip. The earlier HDMI positive control independently establishes HDMI_IN and MAT, not this exact metadata struct. Existing JOC Atmos positive control and MM MAT failures remain unchanged. MAT and grouped TrueHD use the same requested decoder codec; there may still be different downstream configuration and payload handling.
+All extracted from _tv_adec_in_config log lines in the private ZIPs. Correction from the subsequent direct UTF-16LE re-read of hdmi_working.zip: at 04:02:04.998 the HDMI MAT positive control reports source(2), format(28), group(0), stc source(0), force_id(0); at 04:02:05.089 DEC(0) reports MAT_TRUEHD and isAtmos=1. Earlier HDMI lines at 04:00:31 and surrounding sessions have format(30), so do not conflate them with the positive MAT event. See [decoder readback comparison](decoder-readback-comparison.md). Existing JOC Atmos positive control and MM MAT failures remain unchanged. MAT and grouped TrueHD use the same requested decoder codec; there may still be different downstream configuration and payload handling.
 
 ## DSP firmware boundary
 
