@@ -50,3 +50,5 @@ The original non-root objective and evidence are preserved above. The owner now 
 - Stock OTA metadata obtained: full US AU02 payload, installed GB AU04 differs. Offline extraction only, verify target images via scripts/extract_stock_ota.ps1. Exact recovery and snapshot status still unresolved.
 
 - All four selected stock images verified against OTA manifest; run tools/compare_stock_audio.py to verify the actual audio files across regions. No flashing.
+
+- Stock file-level audit: system client, vendor HAL and policy match runtime hashes; active TV APEX client separately matches the same system bytes. Stock APEX layout unresolved; inspect retained workspace and active APEX inventory. Additional HAL eARC format classifier rejects IEC61937; no naive format alias or flash.
