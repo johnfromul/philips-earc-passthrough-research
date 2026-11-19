@@ -67,3 +67,5 @@ The original non-root objective and evidence are preserved above. The owner now 
 - Driver collection: shell pull denied on all six modules; loaded non-JP audio stack identified. Fallback offline stock vendor_dlkm extraction and selected driver archive added. Live byte identity and endpoint mapping unresolved.
 
 - Stock driver archive verified (all six hashes and listed sizes); live byte identity unknown. D9 common PCM registration and conversion boundary resolved; TrueHD bypass enum slot unimplemented in HAL_MAD_SetAudioParam2; existing MAT HDMI bypass DSP parameter writer located. Continue tracing predicates with existing binaries, no new device collection required. [Kernel audit](kernel-audio-driver-audit.md).
+
+- MAT source predicates resolved: MM_IN reaches codec dispatch but both identified MAT bypass flag stores require HDMI_IN; Auto MAT selects the encoder. Resolved actual R2 0xb4 store to MAT_HDMI_bypass. No source impersonation or forced flag. [Analysis](mat-bypass-source-predicates.md); next trace MM decoder/DSP input contract.
