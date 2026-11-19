@@ -59,3 +59,5 @@ Findings: [privacy-manifest-results](privacy-manifest-results.md), [privacy-inve
 
 - [Audio kernel compatibility preflight](audio-kernel-compatibility-preflight.md): six stock modules have modversions/BTF, no standard appended module signature marker; dependencies documented. Run the offline boot audit tool to determine selected config keys. Latest owner preflight still cannot confirm Virtual A/B merge state. No live kernel identity or load compatibility established.
 - [Virtual HDMI audio source](virtual-hdmi-audio-source.md) remains a conditional fallback only if the preferred MM/HAL route fails and a real memory-fed compressed bypass transport is established.
+
+- [Stock audio Device Tree topology](audio-device-tree-topology.md): verified driver-side OF identifiers; collect candidate DT nodes from existing hash-verified vendor_boot/dtbo images using `python tools/inspect_stock_audio_dt.py`. Actual DT trees and selected overlay remain unverified; no device changes.
