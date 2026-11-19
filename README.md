@@ -10,6 +10,7 @@ A reproducible investigation of Dolby TrueHD + Atmos playback from internal Andr
 - Static inspection identifies TCL-specific client checks, absent IEC profiles in the captured policy, and the MediaTek DSP information query path.
 - TCL Media Center drops MKV TrueHD tracks before decoding: its MediaTek extractor reads unset `vendor.mtk.mkv.support.truehd` (defaults false). ADB shell activation was denied by SELinux; no change occurred. Independent app demuxers are unaffected by this particular gate.
 - HDMI capture in Auto shows a working hardware MAT path (192 kHz, 7.1, HDMI_IN, DEC(0), isAtmos=1), versus internal MM_IN, DEC(2), isAtmos=0. The HDMI AudioTrack carries dummy data, not the audio stream itself.
+- E-AC3 JOC full A/V tunnel succeeds in Auto with normal sound, soundbar Atmos and DEC(2) isAtmos=1. The same source and HW sync work for JOC; TrueHD/MAT-specific ingestion remains unresolved.
 - **v0.2.2** adds full A/V tunneling with MAT at 192 kHz for three payload variants; all three variants failed to produce audible Atmos: IEC and LE accept data without recognized audio frames, BE stalls. See [MAT tunnel results](docs/mat-tunnel-results.md). **v0.2.3** adds a dedicated MAT-only screen (same audio tests). MKV is the target, MPEG-TS is out of scope. No bypass or system modification is implemented.
 
 | Start here | Purpose |
@@ -19,6 +20,7 @@ A reproducible investigation of Dolby TrueHD + Atmos playback from internal Andr
 | [Native MKV test](docs/native-player-test.md) | Zero audio tracks, native player evidence |
 | [Extractor stage 4](docs/native-extractor-stage4.md) | Feature flag and SELinux denial |
 | [HDMI comparison](docs/hdmi-comparison.md) | Working hardware path and v0.2.2 test design |
+| [JOC positive control](docs/joc-positive-control.md) | Internal tunneled Atmos success; isolates failure to TrueHD/MAT-specific path |
 | [MAT tunnel results](docs/mat-tunnel-results.md) | Completed three MAT variants and next controls |
 | [Reproduction guide](docs/reproduction.md) | Build, prepare media, deploy, test, collect |
 | [Next experiments](docs/roadmap.md) | Native playback, comparative controls, upstream report |

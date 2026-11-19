@@ -7,7 +7,7 @@ Goal: MKV with TrueHD Atmos in Moonfin / internal Android apps, without root or 
 - [x] FFmpeg 8.1.1 detects Dolby TrueHD + Dolby Atmos in the extracted PC sample and native MKV stream-copy result.
 - [ ] Verify PC and TV truehd.thd SHA-256 match (Get-FileHash -Algorithm SHA256 and adb shell sha256sum).
 - [ ] Independently verify exact remuxed MKA on Windows Kodi WASAPI; separately confirm the exact file and actual soundbar indication for hdmi_working.zip.
-- [ ] Add genuine E-AC3 JOC positive control in the Android tester, including full tunnel; compare decoder isAtmos to soundbar output.
+- [x] E-AC3 JOC positive control: full tunnel, Auto, normal sound, soundbar Atmos, DEC(2) isAtmos=1. [Evidence](joc-positive-control.md).
 
 ## Priority 2: compare internal MKV playback with HDMI
 
@@ -17,13 +17,14 @@ Goal: MKV with TrueHD Atmos in Moonfin / internal Android apps, without root or 
 - [x] Add v0.2.2 experimental 192 kHz MAT full A/V tunnel modes, using public API.
 - [x] Test modes 8, 9, 10 in Auto: no usable audio, all head=0, HAL hasAtmos=-1. See [MAT tunnel results](mat-tunnel-results.md).
 - [x] Classify MAT failures: valid direct track and HW sync; IEC/LE no recognized audio frames; BE write stall. No repeat or new MAT variants without evidence of payload contract.
-- [ ] Run verified E-AC3 JOC control, mode 5 of All A/V tunnel tests, same Auto setting; contrast with MM TrueHD and HDMI MAT.
+- [x] Run E-AC3 JOC control, same Auto setting; contrast with MM TrueHD and HDMI MAT. JOC succeeds.
 - [ ] Repeat with a verified different TrueHD Atmos sample and TrueHD non-Atmos control.
 
 ## Priority 3: native static analysis (if v0.2.2 fails)
 
 - [ ] Reproduce string xrefs and ELF symbol offsets against manifest hashes. Compare identical client libraries with AOSP.
 - [ ] Check exact openDirectOutput selection and hardware profiles; determine missing IEC profile's origin.
+- [ ] Trace MAT/MLP-specific state, including SetMatMlpOnly (candidate, unproven cause); compare format-specific DSP parameter requests. See JOC control notes.
 - [ ] Compare source-specific decoder initialization and AStream behavior (HDMI_IN vs MM_IN), in particular _dspCommFunc_LAPAF_StartDecoderDevice and surrounding call sites. Inspect native parameter and metadata interfaces read-only; do not assume status flag causes metadata loss.
 - [ ] Compare a working firmware/model if available through lawful read-only extraction and identical test procedure.
 
