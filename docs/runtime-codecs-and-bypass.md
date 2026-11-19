@@ -16,7 +16,7 @@ Rechecked actual V670 libmi3_audio_hal.so (see binary hash manifest). The follow
 | _get_trueHD_bypass_enable | 0x4d70e | 0x193b0c | pAudInfo2TypeStr, 34 (0x22) |
 | _Get_Dolby_TrueHD_Bypass_Capability | 0x192bf | 0x193e94 | pCommAudInfoTypeStr, 81 (0x51) |
 
-The tables start at 0x1936b0, 0x193a84 and 0x193d50 respectively. SetAudioParam2 at 0x14ab30 and GetCommAudioInfo at 0x14b1bc construct a request and call the common control-request PLT stub at 0x18d1b0. These are internal typed requests, not established client APIs. A bounded immediate-argument search of direct PLT calls to SetAudioParam2/GetAudioInfo2/GetCommAudioInfo did not find an explicit r0 load of 0x18/0x22/0x51 respectively in the previous 16 disassembled instructions. Indirect calls and computed arguments remain possible. Do not treat the enum labels as evidence that the feature is active or callable by an unprivileged app.
+The tables start at 0x1936b0, 0x193a84 and 0x193d50 respectively. SetAudioParam2 at 0x14ab30 and GetCommAudioInfo at 0x14b1bc construct a request and call the common control-request PLT stub at 0x18d1b0, resolved via R_ARM_JUMP_SLOT at 0x1b5bb0 to MI_APAF_ALSA_UTILS_LAPAF_SetKcontrolParams. These are internal typed requests, not established client APIs. A bounded immediate-argument search of direct PLT calls to SetAudioParam2/GetAudioInfo2/GetCommAudioInfo did not find an explicit r0 load of 0x18/0x22/0x51 respectively in the previous 16 disassembled instructions. Indirect calls and computed arguments remain possible. Do not treat the enum labels as evidence that the feature is active or callable by an unprivileged app.
 
 The named GetKcontrolParams PLT entry is 0x18db10, not 0x18d1b0. No setter invocation attempted.
 
