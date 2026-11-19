@@ -7,12 +7,18 @@ A reproducible investigation of Dolby TrueHD + Atmos playback from internal Andr
 - External HDMI → TV → eARC and HDMI → soundbar reproduce Atmos from the same demo, according to the device owner's observations. E-AC3 Atmos works from internal playback.
 - On firmware V670, ordinary apps can open TrueHD and MAT tracks, but IEC61937 is explicitly filtered and track creation is refused.
 - Full video/audio tunneling resolves the audio-only HW sync stall. Grouping TrueHD access units (16 or 24) restores clean audio and largely normal playback speed; neither produces an Atmos indication.
-- Static inspection identifies TCL-specific client checks, absent IEC profiles in the captured policy, and the MediaTek DSP information query path. The precise cause of missing Atmos metadata remains unresolved. No bypass or system modification is implemented.
+- Static inspection identifies TCL-specific client checks, absent IEC profiles in the captured policy, and the MediaTek DSP information query path.
+- TCL Media Center drops MKV TrueHD tracks before decoding: its MediaTek extractor reads unset `vendor.mtk.mkv.support.truehd` (defaults false). ADB shell activation was denied by SELinux; no change occurred. Independent app demuxers are unaffected by this particular gate.
+- HDMI capture in Auto shows a working hardware MAT path (192 kHz, 7.1, HDMI_IN, DEC(0), isAtmos=1), versus internal MM_IN, DEC(2), isAtmos=0. The HDMI AudioTrack carries dummy data, not the audio stream itself.
+- **v0.2.2** adds full A/V tunneling with MAT at 192 kHz for three payload variants; device validation pending. MKV is the target, MPEG-TS is out of scope. No bypass or system modification is implemented.
 
 | Start here | Purpose |
 |---|---|
 | [Investigation report](docs/investigation.md) | Full chronology, evidence, test matrix and limitations |
 | [Native analysis](docs/native-analysis.md) | Binary locations, symbol addresses, reproducibility and hypotheses |
+| [Native MKV test](docs/native-player-test.md) | Zero audio tracks, native player evidence |
+| [Extractor stage 4](docs/native-extractor-stage4.md) | Feature flag and SELinux denial |
+| [HDMI comparison](docs/hdmi-comparison.md) | Working hardware path and v0.2.2 test design |
 | [Reproduction guide](docs/reproduction.md) | Build, prepare media, deploy, test, collect |
 | [Next experiments](docs/roadmap.md) | Native playback, comparative controls, upstream report |
 | [Evidence index](evidence/README.md) | Source identifiers, SHA-256 manifests and derived observations |
@@ -44,7 +50,7 @@ evidence/            Selected observations and hashes, not raw device dumps
 .github/workflows/   Android debug build CI
 ```
 
-Git tags retain the actual historical source patches: v0.1.0, v0.1.1, v0.2.0, v0.2.1. Main adds documentation, utilities and packaging fixes. Host tests cover parsing/grouping and sample preparation, not Android hardware compatibility.
+Git tags retain the actual historical source patches: v0.1.0, v0.1.1, v0.2.0, v0.2.1. Main includes v0.2.2 source and documentation, utilities and packaging fixes. Host tests cover parsing/grouping and sample preparation, not Android hardware compatibility.
 
 ## Privacy, rights and support
 

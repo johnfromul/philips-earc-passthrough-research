@@ -77,7 +77,11 @@ FFmpeg 8.1.1 independently identified the exact extracted PC sample `truehd.thd`
 
 ## Native analysis
 
-See [native-analysis.md](native-analysis.md) for exact binary paths and locations, hashes, and verification tooling. Explicit software restriction is confirmed in the extracted client library; the missing Atmos indication is downstream of a successful TrueHD track and valid shared clock. Neither is solved by merely forcing an Atmos flag. Static search alone cannot rule out a different server-side restriction. A native Android MediaPlayer/NuPlayer comparison remains pending.
+See [native-analysis.md](native-analysis.md) for exact binary paths and locations, hashes, and verification tooling. Explicit software restriction is confirmed in the extracted client library; the missing Atmos indication is downstream of a successful TrueHD track and valid shared clock. Neither is solved by merely forcing an Atmos flag. Static search alone cannot rule out a different server-side restriction. The native player test instead identified TCL ExoMediaPlayer using the MTK Matroska extractor; both modes showed zero audio tracks. See [native player test](native-player-test.md) and [stage 4 extractor analysis](native-extractor-stage4.md). The extractor feature gate is confirmed and ADB property modification was denied by SELinux.
+
+## HDMI positive control and v0.2.2 design
+
+The subsequent [HDMI comparison](hdmi-comparison.md) records hardware MAT input at 192 kHz and 7.1 in Auto mode, DSP decoder 0 reports MAT_TRUEHD and Atmos=1. Internal grouped TrueHD uses MM_IN and DSP decoder 2, with Atmos=0. The TV-input AudioTrack writes dummy data, so matching format/rate alone cannot reproduce the HDMI hardware routing. v0.2.2 adds three MAT 192 kHz full-tunnel test variants (full IEC, LE MAT and BE MAT). These are pending device tests and are not a fix. The exact sample hash equivalence and operator's separate PC MKA validation remain unconfirmed. MPEG-TS is explicitly out of scope; focus on MKV in Moonfin.
 
 ## Evidence strength
 
