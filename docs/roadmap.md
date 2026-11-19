@@ -15,8 +15,9 @@ Goal: MKV with TrueHD Atmos in Moonfin / internal Android apps, without root or 
 - [x] Identify extractor gate, property default false and failed shell activation (see native-extractor-stage4.md).
 - [x] Capture functioning HDMI MAT path; logs actually indicate Auto, HDMI_IN, DEC(0), MAT_TRUEHD, isAtmos=1 (see hdmi-comparison.md).
 - [x] Add v0.2.2 experimental 192 kHz MAT full A/V tunnel modes, using public API.
-- [ ] Build/install v0.2.2 and test modes 8, 9, 10 with Auto; capture each test and note audio/video result.
-- [ ] If successful, reproduce in Pass Through and with a second verified Atmos MKV. If unsuccessful, classify failures by track creation, HW sync, decoder frame recognition, Atmos metadata and output route.
+- [x] Test modes 8, 9, 10 in Auto: no usable audio, all head=0, HAL hasAtmos=-1. See [MAT tunnel results](mat-tunnel-results.md).
+- [x] Classify MAT failures: valid direct track and HW sync; IEC/LE no recognized audio frames; BE write stall. No repeat or new MAT variants without evidence of payload contract.
+- [ ] Run verified E-AC3 JOC control, mode 5 of All A/V tunnel tests, same Auto setting; contrast with MM TrueHD and HDMI MAT.
 - [ ] Repeat with a verified different TrueHD Atmos sample and TrueHD non-Atmos control.
 
 ## Priority 3: native static analysis (if v0.2.2 fails)
