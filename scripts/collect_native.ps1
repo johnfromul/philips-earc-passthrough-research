@@ -18,8 +18,19 @@ function Note([string]$Line){
 }
 function Capture([string]$File,[string[]]$Cmd){
     Note "Capture: $File"
-    & $adb @prefix @Cmd 2>&1 | Out-File (Join-Path $root $File) -Encoding utf8
-    if($LASTEXITCODE -ne 0){Note "WARNING: adb failed ($LASTEXITCODE): $File"}
+    # Windows PowerShell converts native stderr to error records. Keep ADB
+    # failures local to this capture so missing optional services do not abort.
+    $ErrorActionPreference='Continue'
+    $PSNativeCommandUseErrorActionPreference=$false
+    $output=@(& $adb @prefix @Cmd 2>&1)
+    $exitCode=$LASTEXITCODE
+    $ErrorActionPreference='Stop'
+    $output | Out-File (Join-Path $root $File) -Encoding utf8
+    if($exitCode -ne 0 -or ($output -join "`n") -match "Can't find service:|Permission Denial:|Permission denied"){
+        $warning="ADB capture unavailable ($exitCode): $File; continuing."
+        Note "WARNING: $warning"
+        Write-Warning $warning
+    }
 }
 $live=$null
 try{
@@ -40,6 +51,7 @@ try{
     Capture 'policy_active.txt' @('shell','dumpsys','media.audio_policy')
     Capture 'player_active.txt' @('shell','dumpsys','media.player')
     Capture 'codec_active.txt' @('shell','dumpsys','media.codec')
+    Capture 'dumpsys_services.txt' @('shell','dumpsys','-l')
     Capture 'hdmi_control.txt' @('shell','dumpsys','hdmi_control')
     Capture 'processes.txt' @('shell','ps','-A')
     Note ('Soundbar display: '+(Read-Host 'Soundbar display (Atmos / PCM / Dolby Surround / other / unknown)'))
@@ -53,7 +65,7 @@ try{
         if(-not $live.HasExited){Stop-Process -Id $live.Id -ErrorAction SilentlyContinue; $live.WaitForExit()}
     }
     if($Source -eq 'Probe'){
-        & $adb @prefix pull '/sdcard/Android/data/ro.saitatter.audioprobe/files/tunnel.log' (Join-Path $root 'tunnel.log')
+        Capture 'tunnel_pull.txt' @('pull','/sdcard/Android/data/ro.saitatter.audioprobe/files/tunnel.log',(Join-Path $root 'tunnel.log'))
     }
     Write-Host "Saved: $root. Review locally; do not commit raw logs."
 }
