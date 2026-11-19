@@ -32,3 +32,7 @@ No matching eDolbyVer/MS12V2_Z/AtmosStream(...) diagnostic found in the four arc
 ## Next engineering decision
 
 Prioritize the host-side input contract and supported configuration, not patching these blobs. Look at the source-dependent MAT decoder setup / actual writes and any supported vendor configuration options in the already available binaries and stock text files. Determine whether the archived logs contain any independent evidence of decoded object metadata (none established yet). Seek OEM clarification if distinction cannot be obtained without unauthorized access. No new playback repetition, no firmware installation. Recovery and exact regional stock compatibility still unresolved.
+
+### Archived callback corroboration
+
+Minirama live.log at 05:02:24.981 contains `event=MatStreamType, 1, audio/vnd.dolby.mlp`, followed at .982 by `atmosStream(0)` in AudioHALEventCallbackFunc. JOC at 04:41:06.441 logs `atmosStream(1)`. Thus the grouped raw MLP stream is recognized as such by the vendor callback; the ordinary Atmos result still differs. These are HAL callbacks, not independent raw DSP/shared-memory values or measurements of transmitted object metadata.
