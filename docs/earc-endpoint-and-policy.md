@@ -22,3 +22,24 @@ AOSP describes direct mix ports and dynamically negotiated digital sink profiles
 tools/plan_iec_policy.py exact-stock SHA-256 gate (4fbbdd581ec2415d04aab5edfc139a5585af10cac9ed85bbd4ab523dc0518884), separate output, semantic comparison removing just the one candidate port and its route reference. Host tests passed on the earlier supplied 31189-byte representative policy (SHA-256 f7150e32f11bf05d612e22086f1785ad8b074197f75ae5c34274a87a14d513bf): deterministic, eARC-only link, unchanged remaining XML structure, reject duplicate/missing route. CLI correctly rejected that fixture as non-exact stock. Exact 31186-byte stock XML remains in owner's WSL workspace and has NOT been tested here. No runtime schema/HAL validation. Test on exact local policy with tools/test_iec_policy.py; run generator only offline. No AVB/APEX signing or flash changes.
 
 Next decision: if sysfs exposes a named non-PCM endpoint, establish driver format/ownership and timing contract from matching stock kernel/module source. If unavailable, inspect stock vendor_dlkm offline; do not write to an unknown output. A policy and client experiment without a validated HAL transport still is not flashable. No changes to TV, no Atmos result claimed.
+
+## Runtime endpoint inventory and exact stock policy generation (2026-11-19)
+
+Private archive earc_endpoint.zip (5700 bytes, SHA-256 b6e03819e34e68f1b41bbf325ae50cc0bcecb60b307782aee73ef239902f9823). Fingerprint matches installed GB AU04. sound_sysfs.txt and playback_metadata.txt establish card0 path /sys/devices/platform/mtk-tvsnd-machine/sound/card0, with playback PCM nodes D0, D1, D2, D9 and compressed nodes D12–D16. Card1 is snd_aloop; cards2 and 3 expose capture nodes. Reads of pcm_class, uevent, dev and card id failed with Permission denied. /proc/asound/cards and /proc/asound/pcm also denied. A zero exit code for the playback loop does not mean the individual cat commands succeeded. No concrete EARC non-PCM node mapped. No playback or mixer writes.
+
+audio_modules.txt lists /vendor/lib/modules symlink to /vendor_dlkm/lib/modules and the following candidate kernel modules (on-disk presence only; loading status not established):
+
+| Name | Bytes |
+|---|---:|
+| mtk-earc.ko | 210200 |
+| mtk-tvsnd-machine.ko | 350400 |
+| mtk-tvsnd-platform.ko | 662992 |
+| mtk-tvsnd-soc.ko | 3071872 |
+| mtk-tvsnd-dsp-loader.ko | 12648 |
+| mtk-tvsnd-soc-JP.ko | 3127088 |
+
+The previously acquired LAPAF library has exported MI_APAF_ALSA_UTILS_InitEarcNonPcmDevInfo at 0x147b18. Its call at 0x147b44 goes to _MI_APAF_ALSA_UTILS_GetDevInfo at 0x14669c. It loads the name, result string and index pointers before the call; the presence of this lookup does not establish any fixed device number. The new collection script scripts/collect_earc_drivers.ps1 pulls only these six modules, records hashes, kernel release and optional loaded-module list. May be denied by SELinux; no bypass is attempted. Archive earc_drivers.zip is private, not a repository artifact. If pull is denied, use the verified OTA vendor_dlkm partition offline and separately confirm against device evidence. No module installation or changes.
+
+Owner's policy_report.json (546 bytes, SHA-256 0da9b2fc568240bed51d468880fe2f14f4b56123dce7196fa10a74866cc269af) confirms exact-stock generator passed with original hash 4fbbdd581ec2415d04aab5edfc139a5585af10cac9ed85bbd4ab523dc0518884, candidate hash 053aafe663b5218b65ce10022cf873b8e69c75b4b3766775e8afb072db9c2655, IEC61937 192000/8, DIRECT/HW_AV_SYNC, HDMI EARC only, device port unchanged. As the report states, runtime_validated=false and flashable=false. This closes exact stock structural generation, not Android policy parse or route negotiation at runtime.
+
+Next: inspect the module tables/string references and DAI link/PCM/ASoC driver definitions for actual non-PCM endpoint mapping, rate/channel/format constraints and write contract. If an MM-fed non-PCM endpoint is missing, investigate existing DSP transport rather than guessing ALSA IDs. Do not deploy until transport, recovery and supported development boot configuration are established.

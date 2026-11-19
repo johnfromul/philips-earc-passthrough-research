@@ -61,3 +61,5 @@ The original non-root objective and evidence are preserved above. The owner now 
 - Privacy manifest audit complete for 13/14 packages. See [manifest findings](privacy-manifest-results.md); owner-select optional reversible package changes, no firmware removal. Audio transport and deployment still unresolved.
 
 - EARC non-PCM endpoint names and live DataManager callback identified; EarcOutput ProcessData no-op. Dedicated eARC-only policy proposal with host structural tests on representative XML; exact stock generation and endpoint inventory pending. [Notes](earc-endpoint-and-policy.md). No deployment.
+
+- Exact-stock AudioPolicy generator passed (owner report); live endpoint inventory identifies MediaTek card0 playback D0/D1/D2/D9 and compressed D12–16, names denied. Six relevant driver files listed; targeted read-only driver collection pending. [Endpoint follow-up](earc-endpoint-and-policy.md). No deployment.
