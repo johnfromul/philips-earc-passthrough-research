@@ -25,6 +25,10 @@ Capture 'partition-links.txt' @('shell','ls -l /dev/block/by-name /dev/block/map
 Capture 'mounts.txt' @('shell','cat /proc/mounts')
 Capture 'bootctl-current.txt' @('shell','bootctl','get-current-slot')
 Capture 'bootctl-slots.txt' @('shell','bootctl','get-number-slots')
+# Read-only update / snapshot queries; unavailable on some stock builds.
+Capture 'update-engine-status.txt' @('shell','update_engine_client','--status')
+Capture 'snapshot-status.txt' @('shell','snapshotctl','dump')
+Capture 'bootctl-merge-status.txt' @('shell','bootctl','get-snapshot-merge-status')
 Capture 'apex-audio.txt' @('shell','ls -ld /apex/com.tcl.tcore* /system/lib/libaudioclient.so /vendor/lib/hw/audio.primary.merak.so')
 Capture 'audio-hashes.txt' @('shell','sha256sum /system/lib/libaudioclient.so /apex/com.tcl.tcore/lib/libaudioclient.so /vendor/lib/hw/audio.primary.merak.so /vendor/etc/primary_audio_policy_configuration.xml 2>&1')
 Capture 'audio-policy-files.txt' @('shell',"find /vendor/etc /odm/etc /system/etc /system_ext/etc /product/etc -name '*audio_policy*xml' 2>/dev/null")
