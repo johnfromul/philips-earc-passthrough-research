@@ -38,9 +38,12 @@ public final class TunnelActivity extends Activity implements SurfaceHolder.Call
         TRUEHD("2. TrueHD 7.1 tunnel (audio first)",14,AudioFormat.CHANNEL_OUT_7POINT1_SURROUND,"truehd.thd",false,false),
         TRUEHD_CODEC_FIRST("3. TrueHD 7.1 tunnel (video first)",14,AudioFormat.CHANNEL_OUT_7POINT1_SURROUND,"truehd.thd",false,true),
         EAC3("4. E-AC3 5.1 tunnel (optional)",6,AudioFormat.CHANNEL_OUT_5POINT1,"control.eac3",false,false),
-        JOC("5. E-AC3 JOC tunnel (optional Atmos sample)",18,AudioFormat.CHANNEL_OUT_5POINT1,"control.eac3",false,false);
+        JOC("5. E-AC3 JOC tunnel (optional Atmos sample)",18,AudioFormat.CHANNEL_OUT_5POINT1,"control.eac3",false,false),
+        TRUEHD_GROUP16("6. TrueHD 7.1 tunnel — 16 AU per write",14,AudioFormat.CHANNEL_OUT_7POINT1_SURROUND,"truehd.thd",false,false),
+        TRUEHD_GROUP24("7. TrueHD 7.1 tunnel — 24 AU per write",14,AudioFormat.CHANNEL_OUT_7POINT1_SURROUND,"truehd.thd",false,false);
         final String label,file; final int encoding,mask; final boolean pcm,codecFirst;
         Mode(String label,int encoding,int mask,String file,boolean pcm,boolean codecFirst){this.label=label;this.encoding=encoding;this.mask=mask;this.file=file;this.pcm=pcm;this.codecFirst=codecFirst;}
+        int groupSize(){return this==TRUEHD_GROUP16?16:this==TRUEHD_GROUP24?24:1;}
         public String toString(){return label;}
         AudioFormat format(){return new AudioFormat.Builder().setEncoding(encoding).setSampleRate(48000).setChannelMask(mask).build();}
     }
@@ -50,7 +53,7 @@ public final class TunnelActivity extends Activity implements SurfaceHolder.Call
         setVolumeControlStream(AudioManager.STREAM_MUSIC);
         dir=getExternalFilesDir(null); if(dir==null)dir=getFilesDir(); report=new File(dir,"tunnel.log");
         LinearLayout root=new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL); root.setPadding(20,12,20,12);
-        state=new TextView(this); state.setTextSize(20); state.setText("Full A/V tunnel v0.2.0 — lower soundbar volume"); root.addView(state);
+        state=new TextView(this); state.setTextSize(20); state.setText("Full A/V tunnel v0.2.1 — lower soundbar volume"); root.addView(state);
         modes=new Spinner(this); bind(modes,Mode.values()); root.addView(modes);
         LinearLayout controls=new LinearLayout(this); root.addView(controls);
         inspect=button(controls,"Inspect",()->job(()->listCodecs()));
@@ -64,7 +67,7 @@ public final class TunnelActivity extends Activity implements SurfaceHolder.Call
         observation=new Spinner(this); bind(observation,new String[]{"Audio result","Atmos + normal sound","Dolby Surround + normal sound","PCM + normal sound","Other normal sound","No sound","Noise / beep","Failed"}); results.addView(observation,new LinearLayout.LayoutParams(0,-2,2));
         picture=new Spinner(this); bind(picture,new String[]{"Video result","Moving video","Frozen picture","Black screen","Not sure"}); results.addView(picture,new LinearLayout.LayoutParams(0,-2,2));
         record=button(results,"Record result",()->{if(lastMode!=null)log("OBSERVED mode="+lastMode.name()+" session="+lastSession+" audio="+observation.getSelectedItem()+" video="+picture.getSelectedItem());});
-        setContentView(root); update(); inspect.requestFocus(); log("START v0.2.0 pid="+android.os.Process.myPid()+" fingerprint="+Build.FINGERPRINT+" dir="+dir);
+        setContentView(root); update(); inspect.requestFocus(); log("START v0.2.1 pid="+android.os.Process.myPid()+" fingerprint="+Build.FINGERPRINT+" dir="+dir);
     }
     private <T> void bind(Spinner s,T[] items){ArrayAdapter<T> a=new ArrayAdapter<>(this,android.R.layout.simple_spinner_item,items);a.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);s.setAdapter(a);}
     private Button button(LinearLayout r,String t,Runnable click){Button b=new Button(this);b.setText(t);b.setAllCaps(false);b.setOnClickListener(v->click.run());r.addView(b,new LinearLayout.LayoutParams(0,-2,1));return b;}
@@ -122,16 +125,16 @@ public final class TunnelActivity extends Activity implements SurfaceHolder.Call
         }
     }
     private static final class AudioFeed implements Closeable {
-        final FrameReader compressed; final DataInputStream pcm; long pcmSamples;
-        AudioFeed(File f,Mode m)throws IOException{if(m.pcm){pcm=new DataInputStream(new BufferedInputStream(new FileInputStream(f)));compressed=null;}else{pcm=null;compressed=new FrameReader(f,m.encoding==14?FrameReader.Kind.TRUEHD:FrameReader.Kind.EAC3);}}
-        FrameReader.Unit next()throws IOException{if(compressed!=null)return compressed.next();byte[] data=new byte[11520];int n=pcm.read();if(n<0)return null;data[0]=(byte)n;pcm.readFully(data,1,data.length-1);long pts=pcmSamples*1000000000L/48000;pcmSamples+=960;return new FrameReader.Unit(data,pts);}
+        final FrameReader compressed; final DataInputStream pcm; final int groupSize; long pcmSamples;
+        AudioFeed(File f,Mode m)throws IOException{groupSize=m.groupSize();if(m.pcm){pcm=new DataInputStream(new BufferedInputStream(new FileInputStream(f)));compressed=null;}else{pcm=null;compressed=new FrameReader(f,m.encoding==14?FrameReader.Kind.TRUEHD:FrameReader.Kind.EAC3);}}
+        FrameReader.Unit next()throws IOException{if(compressed!=null)return TrueHdChunks.next(compressed,groupSize);byte[] data=new byte[11520];int n=pcm.read();if(n<0)return null;data[0]=(byte)n;pcm.readFully(data,1,data.length-1);long pts=pcmSamples*1000000000L/48000;pcmSamples+=960;return new FrameReader.Unit(data,pts);}
         public void close()throws IOException{if(compressed!=null)compressed.close();else pcm.close();}
     }
     private String audioStatus(AudioTrack a){AudioTimestamp t=new AudioTimestamp();boolean ok=a.getTimestamp(t);AudioDeviceInfo d=a.getRoutedDevice();return "head="+Integer.toUnsignedLong(a.getPlaybackHeadPosition())+" timestamp="+(ok?t.framePosition+"/"+t.nanoTime:"unavailable")+" route="+(d==null?"none":d.getId()+"/"+d.getType()+"/"+d.getProductName());}
     private void run(Mode m,Surface surface)throws Exception{
         File vf=new File(dir,"tunnel_video.mp4"), af=new File(dir,m.file);if(!vf.isFile()||!af.isFile())throw new FileNotFoundException("Missing sample: "+(!vf.isFile()?vf:af));
         int session=((AudioManager)getSystemService(AUDIO_SERVICE)).generateAudioSessionId();if(session<=0)throw new IOException("generateAudioSessionId failed: "+session);lastSession=session;
-        log("=== TUNNEL TEST "+m.name()+" session="+session+" codecFirst="+m.codecFirst+" ===");
+        log("=== TUNNEL TEST "+m.name()+" session="+session+" codecFirst="+m.codecFirst+" groupSize="+m.groupSize()+" ===");
         AudioTrack a=null;MediaCodec c=null;boolean started=false;MediaExtractor x=new MediaExtractor();AtomicLong rendered=new AtomicLong(),lastRendered=new AtomicLong(-1);AtomicBoolean firstReady=new AtomicBoolean();
         try(AudioFeed feed=new AudioFeed(af,m)){
             x.setDataSource(vf.getAbsolutePath());MediaFormat fmt=null;
@@ -149,7 +152,7 @@ public final class TunnelActivity extends Activity implements SurfaceHolder.Call
             c.start();started=true;log("VIDEO_STARTED decoder="+decoder+" session="+session+" inputFormat="+c.getInputFormat());
             try{Bundle params=new Bundle();params.putInt(MediaCodec.PARAMETER_KEY_TUNNEL_PEEK,0);c.setParameters(params);}catch(Exception e){log("TUNNEL_PEEK unsupported: "+e);}
             FrameReader.Unit unit=feed.next();if(unit==null)throw new EOFException("Empty audio sample");
-            ByteBuffer ab=ByteBuffer.allocateDirect(65536);ab.put(unit.data).flip();
+            ByteBuffer ab=ByteBuffer.allocateDirect(262144);ab.put(unit.data).flip();
             // Prime video and timestamped audio while paused. Never wait indefinitely for frames.
             long bytes=0,units=0,primeUntil=SystemClock.elapsedRealtime()+1200;
             while(!cancel&&SystemClock.elapsedRealtime()<primeUntil&&videoFeed.frames<6){if(!videoFeed.pump(c,x,250000))SystemClock.sleep(3);}
