@@ -54,3 +54,8 @@ Use `pm disable-user --user 0 <pkg>`; restore with `pm enable --user 0 <pkg>`. O
 - Keep: com.tcl.tvinput, com.tcl.systemserver, HeraEye/hera APEX, tcore, T-Solo, consent/update services.
 
 Findings: [privacy-manifest-results](privacy-manifest-results.md), [privacy-inventory-results](privacy-inventory-results.md).
+
+## Audio kernel preflight and fallback
+
+- [Audio kernel compatibility preflight](audio-kernel-compatibility-preflight.md): six stock modules have modversions/BTF, no standard appended module signature marker; dependencies documented. Run the offline boot audit tool to determine selected config keys. Latest owner preflight still cannot confirm Virtual A/B merge state. No live kernel identity or load compatibility established.
+- [Virtual HDMI audio source](virtual-hdmi-audio-source.md) remains a conditional fallback only if the preferred MM/HAL route fails and a real memory-fed compressed bypass transport is established.
