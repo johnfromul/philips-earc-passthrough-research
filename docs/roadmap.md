@@ -5,7 +5,7 @@ Goal: MKV with TrueHD Atmos in Moonfin / internal Android apps, without root or 
 ## Priority 1: validate identical media
 
 - [x] FFmpeg 8.1.1 detects Dolby TrueHD + Dolby Atmos in the extracted PC sample and native MKV stream-copy result.
-- [ ] Verify PC and TV truehd.thd SHA-256 match (Get-FileHash -Algorithm SHA256 and adb shell sha256sum).
+- [x] Verify PC and TV truehd.thd SHA-256 match: `1779b6f1d20108c3b8404ed62c3477b67f817e80ccfb4fc93b1e953887d3da64` (owner reported identical host and device hashes).
 - [ ] Independently verify exact remuxed MKA on Windows Kodi WASAPI; separately confirm the exact file and actual soundbar indication for hdmi_working.zip.
 - [x] E-AC3 JOC positive control: full tunnel, Auto, normal sound, soundbar Atmos, DEC(2) isAtmos=1. [Evidence](joc-positive-control.md).
 
