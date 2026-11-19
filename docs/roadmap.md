@@ -20,14 +20,16 @@ Goal: MKV with TrueHD Atmos in Moonfin / internal Android apps, without root or 
 - [x] Run E-AC3 JOC control, same Auto setting; contrast with MM TrueHD and HDMI MAT. JOC succeeds.
 - [x] Repeat grouped TrueHD after alternate upload instructions: session 929 accepts 26.82 MB vs 17.79 MB in the prior attempt, normal audio/video, Dolby Surround, isAtmos=0. [Retest](minirama-retest.md). Exact installed hash remains to be recorded; earlier attempt's provenance was corrected.
 - [x] Host alternate sample ffprobe confirms Dolby TrueHD + Dolby Atmos, 48 kHz, 7.1, 24-bit; SHA-256 cd126fb45fc6a79b61ddc13d1a9aaab3db11856f4f0f5cdfef57bcf520e4f701.
-- [ ] Record alternate sample hash on TV (new Probe capture helper hashes the selected file before/after). Confirm exact stream-copy alternate MKV through Windows Kodi WASAPI HDMI into TV; test non-Atmos control only if useful.
+- [ ] Record alternate sample hash on TV (new Probe capture helper hashes the selected file before/after). Exact stream-copy alternate HDMI check deferred by owner; existing HDMI positive control does not establish exact sample identity.
 
 ## Priority 3: native static analysis (if v0.2.2 fails)
 
 - [ ] Reproduce string xrefs and ELF symbol offsets against manifest hashes. Compare identical client libraries with AOSP.
 - [ ] Check exact openDirectOutput selection and hardware profiles; determine missing IEC profile's origin.
 - [x] Identify source-specific MatMlpOnly initialization (Mat + MM => 1, otherwise 0 within Mat block), and HAL parameter storage/readback. [Static analysis](mat-mlp-only-analysis.md).
-- [ ] Trace actual DSP consumer and semantics; this parameter's causal role is unproven.
+- [x] Resolve MatMlpOnly dispatch via packed ELF relocations, confirm store-only setter and downstream compressed-device write boundary. Identify parser eligibility exclusion for TrueHD/MAT. [Analysis](decoder-dispatch-and-parser.md).
+- [ ] Inspect advertised Codec2 audio routes and vendor component binaries collected with scripts/collect_codec_routes.ps1; determine whether an app-accessible Atmos-preserving output exists.
+- [ ] Trace any indirect DSP consumer and semantics; MatMlpOnly causal role remains unproven.
 - [ ] Compare source-specific decoder initialization and AStream behavior (HDMI_IN vs MM_IN), in particular _dspCommFunc_LAPAF_StartDecoderDevice and surrounding call sites. Inspect native parameter and metadata interfaces read-only; do not assume status flag causes metadata loss.
 - [ ] Compare a working firmware/model if available through lawful read-only extraction and identical test procedure.
 

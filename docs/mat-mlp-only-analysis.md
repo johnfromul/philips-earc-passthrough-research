@@ -40,3 +40,7 @@ libmi3_audio_hal.so SHA-256 07572cae7d738df1cf5cd2d18bf6b3e74472a8c9412d70ba6c12
 For both TrueHD RAW and MAT, the internal logs name the decoder format Mat. HDMI also uses Mat. The source-specific initialization above is a concrete behavioral difference, but MLP-only may merely distinguish raw TrueHD access units from already packaged MAT. Do not equate MLP-only with Atmos disabled. Trace parameter-manager dispatch, filter initialization and DSP control semantics; compare raw TrueHD and hardware MAT input. Host ffprobe now identifies the alternate as Atmos, but the TV's active sample hash still matches the original Amaze file. Upload and verify the alternate hash before retesting; check the same exact file through known-good HDMI before stronger claims. No further speculative bitstream modes, system changes, privileged operations, or status-flag forcing.
 
 Reproduce with readelf -Ws and llvm-objdump -d --triple=thumbv7a-linux-android, restricting addresses to the ranges above. Do not distribute extracted binaries.
+
+## Follow-up
+
+[Decoder dispatch and parser analysis](decoder-dispatch-and-parser.md) resolves the actual setter pointer using APS2 relocations and confirms the store-only success path. Direct DSP application is still unproven.
