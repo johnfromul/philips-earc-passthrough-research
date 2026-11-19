@@ -41,3 +41,5 @@ linker_config.txt
 *.capex
 *.payload
 /samples_alt/
+
+*.ko
