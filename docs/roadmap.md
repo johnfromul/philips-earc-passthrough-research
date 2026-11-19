@@ -52,3 +52,5 @@ The original non-root objective and evidence are preserved above. The owner now 
 - All four selected stock images verified against OTA manifest; run tools/compare_stock_audio.py to verify the actual audio files across regions. No flashing.
 
 - Stock file-level audit: system client, vendor HAL and policy match runtime hashes; active TV APEX client separately matches the same system bytes. Stock APEX layout unresolved; inspect retained workspace and active APEX inventory. Additional HAL eARC format classifier rejects IEC61937; no naive format alias or flash.
+
+- APEX symlink resolved; active factory source verified. Offline V670 client prototype generated and host-checked; HAL/policy remain unresolved. See [client experiment](iec-client-experiment.md). No deployment.
