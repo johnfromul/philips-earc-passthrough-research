@@ -5,6 +5,13 @@ PATTERNS={
  'probe_test':r'=== TEST |=== TUNNEL TEST ', 'observed':r'OBSERVED ', 'probe_built':r'\bBUILT session=|AUDIO_BUILT', 'probe_end':r'\bTUNNEL_END |\bEND bytes=',
  'iec_filter':r'IEC61937.*(?:support|track)|(?:support|track).*IEC61937', 'hal_route':r'DigitalOutputFormat|Input format\(|updatePipelineTopology: .*EarcOutput|SEBypassOutput',
  'atmos':r'MAT stream type|DolbyInfo\.is_atmos|STREAM_ATOMS|hasAtmos:|isAtmos\(', 'avsync':r'hwSyncId|hw_sync_id|HW_AV_SYNC|tpc is not ready', 'frame_errors':r'Too long without an audio frame|no tpc audio hal handle fail', 'dsp':r'ADEC1 ESID|ch_map\(', 'exceptions':r'FAIL:|Cannot create AudioTrack'}
+PATTERNS.update({
+ 'mkv_gate':r'is suppoort truehd|A_TRUEHD.*(?:not supported|supported)|audioTrackCount=|MTK Matroska Extractor',
+ 'property_gate':r'vendor\.mtk\.mkv\.support\.truehd|ro\.feature\.media_dolby_truehd',
+ 'hdmi_source':r'InputSource=HDMI|AStream External Input Passthrough Mode|mAudioTrack write dummy data|source\([^)]*HDMI_IN|PlayType\([^)]*HDMI',
+ 'mm_source':r'InputSource=MM|source\([^)]*MM_IN|SRC_MM_NONTUNNEL',
+ 'mat_input':r'format 0x24000000|DVB_MAT|PCM-encoding=22|audio/vnd\.dolby\.mlp'
+})
 REGEX={k:re.compile(v,re.I) for k,v in PATTERNS.items()}
 def decode(data):return data.decode('utf-16' if data.startswith((b'\xff\xfe',b'\xfe\xff')) else 'utf-8-sig',errors='replace')
 def sources(p):

@@ -11,6 +11,11 @@ Capture 'libraries.txt' @('shell',"find /system/lib /system_ext/lib /vendor/lib 
 Capture 'processes.txt' @('shell','ps','-A')
 Capture 'hal_services.txt' @('shell','lshal')
 Capture 'properties.txt' @('shell','getprop')
+Capture 'truehd_property.txt' @('shell','getprop','vendor.mtk.mkv.support.truehd')
+Capture 'truehd_property_context.txt' @('shell','getprop','-Z','vendor.mtk.mkv.support.truehd')
+Capture 'truehd_property_type.txt' @('shell','getprop','-T','vendor.mtk.mkv.support.truehd')
+Capture 'truehd_feature.txt' @('shell','getprop','ro.feature.media_dolby_truehd')
+Capture 'passthrough_mode.txt' @('shell','getprop','ro.vendor.mtk.passthrough_mode')
 Capture 'shell_identity.txt' @('shell','id')
 Capture 'selinux.txt' @('shell','getenforce')
 Capture 'alsa_cards.txt' @('shell','cat','/proc/asound/cards')
@@ -55,7 +60,11 @@ $libs=@(
 '/vendor/lib/libtinyalsa-master.so',
 '/vendor/lib/libmi3_mi_hal.so',
 '/vendor/lib/libmi3_ipc_common.so',
-'/vendor/lib/libms12v27.so'
+'/vendor/lib/libms12v27.so',
+'/system_ext/lib/extractors/libmtkmkvextractor.so',
+'/system_ext/lib/extractors/libmpeg2tsextractor.so',
+'/system_ext/lib/extractors/libmtkmp4extractor.so',
+'/apex/com.android.media/lib/extractors/libmkvextractor.so'
 )
 foreach($lib in $libs){
   $dest=Join-Path $libroot ($lib.TrimStart('/') -replace '/','\')
