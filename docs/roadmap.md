@@ -18,13 +18,15 @@ Goal: MKV with TrueHD Atmos in Moonfin / internal Android apps, without root or 
 - [x] Test modes 8, 9, 10 in Auto: no usable audio, all head=0, HAL hasAtmos=-1. See [MAT tunnel results](mat-tunnel-results.md).
 - [x] Classify MAT failures: valid direct track and HW sync; IEC/LE no recognized audio frames; BE write stall. No repeat or new MAT variants without evidence of payload contract.
 - [x] Run E-AC3 JOC control, same Auto setting; contrast with MM TrueHD and HDMI MAT. JOC succeeds.
-- [ ] Repeat with a verified different TrueHD Atmos sample and TrueHD non-Atmos control.
+- [x] Repeat grouped TrueHD with operator-selected Minirama: normal audio/video, Dolby Surround, isAtmos=0. [Results](truehd-second-sample.md).
+- [ ] Independently verify alternate sample's Atmos profile, file hash and exact HDMI positive control; test non-Atmos control only if useful.
 
 ## Priority 3: native static analysis (if v0.2.2 fails)
 
 - [ ] Reproduce string xrefs and ELF symbol offsets against manifest hashes. Compare identical client libraries with AOSP.
 - [ ] Check exact openDirectOutput selection and hardware profiles; determine missing IEC profile's origin.
-- [ ] Trace MAT/MLP-specific state, including SetMatMlpOnly (candidate, unproven cause); compare format-specific DSP parameter requests. See JOC control notes.
+- [x] Identify source-specific MatMlpOnly initialization (Mat + MM => 1, otherwise 0 within Mat block), and HAL parameter storage/readback. [Static analysis](mat-mlp-only-analysis.md).
+- [ ] Trace actual DSP consumer and semantics; this parameter's causal role is unproven.
 - [ ] Compare source-specific decoder initialization and AStream behavior (HDMI_IN vs MM_IN), in particular _dspCommFunc_LAPAF_StartDecoderDevice and surrounding call sites. Inspect native parameter and metadata interfaces read-only; do not assume status flag causes metadata loss.
 - [ ] Compare a working firmware/model if available through lawful read-only extraction and identical test procedure.
 
