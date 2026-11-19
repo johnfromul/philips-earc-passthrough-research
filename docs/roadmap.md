@@ -42,3 +42,7 @@ Goal: MKV with TrueHD Atmos in Moonfin / internal Android apps, without root or 
 Share anonymized results with TCL and relevant app developers. Include model, firmware, source verification, expected/actual behavior, external HDMI positive control, grouped A/V observations, native MKV feature gate and IEC filter evidence, DSP isAtmos flags. Ask TCL for a supported public playback path to TrueHD Atmos and whether the IEC restrictions and MKV gate are intentional. Avoid publishing proprietary binaries or personal identifiers. The diagnostic application is not a fix. Normal sound and Atmos indication, not successful track creation alone, define success.
 
 No root/system modifications or SELinux changes. Do not spoof hardware source or process identity. Potential future solution: standards-compliant app path or OEM firmware correction.
+
+## Optional owner-authorized firmware research track
+
+The original non-root objective and evidence are preserved above. The owner now requests a stock-based firmware experiment for IEC61937. See [firmware project](custom-firmware-iec61937.md). F0 read-only preflight pending; no compatible recovery or unlocked development configuration demonstrated, no image generated.
