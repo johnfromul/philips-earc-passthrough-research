@@ -1,0 +1,24 @@
+# Non-PCM endpoint and narrow AudioPolicy prototype — V670
+
+Privacy work is separate; no package changes in this commit. Reopened local original ELF files and verified audio.primary.merak.so SHA-256 e47bfd65a6055987fcdfbc9a67166b8024061504d7c5d84e7e88b2b53cf10bad and libmi3_audio_hal.so SHA-256 07572cae7d738df1cf5cd2d18bf6b3e74472a8c9412d70ba6c12b8f365183e2a.
+
+## Live write boundary
+
+utils_out_write_data, Thumb VA 0x89040 in primary HAL, passes a stack data packet to MI_APAF_DataManager_WriteData. At 0x893e8 it places the buffer and remaining byte count at offsets +8/+12 relative to the packet at sp+0x38; 0x893ec copies two words from stream +0x1f0, 0x893f4 calls helper 0x8a2b0 that updates other packet fields. 0x893f8–0x893fc passes a pipeline handle and the packet to PLT 0xcf850. Confirmed by .rel.plt entry 469, R_ARM_JUMP_SLOT at 0xd37d0, MI_APAF_DataManager_WriteData. Return value is subtracted from remaining bytes and added to the accounted bytes at 0x89402–0x8940a; this matters for partial writes. The conditional parser branch also calls this API at 0x89756 after Parser_Read. Do not assume all streams use that parser.
+
+In libmi3_audio_hal.so, MI_APAF_DataManager_WriteData (0xa3a18) resolves a pipeline; at 0xa3c18 loads callback from object +0x2a8, at 0xa3c20 calls it if non-null. This is a pipeline-dependent write, not a direct eARC sink. Earlier work traced decoder writes to compressed-device boundary. Directly calling the pipeline manager with an arbitrary handle would not prove a valid encoded output route.
+
+## EARC output is a control component, not a proven byte sink
+
+- _MI_APAF_FILTER_EARC_OUTPUT_ProcessData at 0x10f970–0x10f972 is exactly movs r0,#0; bx lr. No data write in this body.
+- _MI_APAF_FILTER_EARC_OUTPUT_SetParam_DecoderFormat at 0x111084 stores value at state +0x140 (0x11108c), optionally logs and returns zero. This is not a demonstrated transmission switch.
+- ELF objects mi_apaf_earc_pcm_playback_dev_name (VA 0x1d57dc, 14 bytes, file offset 0x1d27dc) = EARC Playback; mi_apaf_earc_nonpcm_playback_dev_name (VA 0x1d57ea, 21 bytes, file offset 0x1d27ea) = EARC NONPCM Playback. Associated non-PCM index at VA 0x2a9424. MI_APAF_ALSA_UTILS_InitEarcNonPcmDevInfo at 0x147b18 calls _MI_APAF_ALSA_UTILS_GetDevInfo at 0x147b44. Names and lookup are concrete evidence of designed endpoints, not proof these exist or accept MAT on this TV.
+- Earlier stage2 ALSA listing includes pcmC0D0p, D1p, D2p and restricted D9p; names not mapped. /proc/asound/cards and /proc/asound/pcm stdout was empty in that capture. No exact eARC non-PCM device index established. New scripts/collect_earc_endpoint.ps1 queries targeted sysfs playback/card metadata and module filenames, capturing stderr; may fail under stock shell. No opening /dev/snd nodes or writing mixer controls. Do not guess endpoint number. No matching literal EARC NONPCM Playback or InitEarcNonPcm in searched HDMI, JOC, Minirama and MAT live logs.
+
+## Offline policy prototype
+
+AOSP describes direct mix ports and dynamically negotiated digital sink profiles (https://source.android.com/docs/core/audio/implement-policy). This is a local design only: dedicated DIRECT + HW_AV_SYNC candidate at IEC61937/192000/7.1, attached solely to HDMI EARC, maxOpenCount and maxActiveCount 1. No devicePort capability added, no change to other routes, no generic IEC or PCM fallback; this does NOT advertise a working profile at runtime. Choose HW_AV_SYNC because previous verified A/V tunnel had that route, not because Moonfin necessarily uses it. Ordinary non-tunnel direct profile remains future work. Must verify actual transport and dynamic policy behavior before deployment.
+
+tools/plan_iec_policy.py exact-stock SHA-256 gate (4fbbdd581ec2415d04aab5edfc139a5585af10cac9ed85bbd4ab523dc0518884), separate output, semantic comparison removing just the one candidate port and its route reference. Host tests passed on the earlier supplied 31189-byte representative policy (SHA-256 f7150e32f11bf05d612e22086f1785ad8b074197f75ae5c34274a87a14d513bf): deterministic, eARC-only link, unchanged remaining XML structure, reject duplicate/missing route. CLI correctly rejected that fixture as non-exact stock. Exact 31186-byte stock XML remains in owner's WSL workspace and has NOT been tested here. No runtime schema/HAL validation. Test on exact local policy with tools/test_iec_policy.py; run generator only offline. No AVB/APEX signing or flash changes.
+
+Next decision: if sysfs exposes a named non-PCM endpoint, establish driver format/ownership and timing contract from matching stock kernel/module source. If unavailable, inspect stock vendor_dlkm offline; do not write to an unknown output. A policy and client experiment without a validated HAL transport still is not flashable. No changes to TV, no Atmos result claimed.

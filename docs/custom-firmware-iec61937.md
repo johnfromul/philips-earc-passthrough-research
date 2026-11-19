@@ -86,3 +86,7 @@ See [IEC client experiment](iec-client-experiment.md). Stock APEX client is a sy
 ## MAT carrier and privacy tracks
 
 [Offline carrier reference](iec-mat-carrier-reference.md) bounds and validates the MAT burst before forwarding intact bytes; debug parser is not proof of a live playback path. [Privacy/debloat plan](privacy-audit.md) remains independent of the audio module. No security protections removed or firmware flashed.
+
+## eARC endpoint and policy follow-up
+
+[Endpoint audit and policy prototype](earc-endpoint-and-policy.md) identifies the named ALSA non-PCM device lookup, confirms EarcOutput ProcessData is a no-op, and implements a narrow offline eARC-only mixPort candidate. Validated transport, runtime profile advertisement and deployment still missing.

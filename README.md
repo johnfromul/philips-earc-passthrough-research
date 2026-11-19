@@ -23,6 +23,7 @@ A reproducible investigation of Dolby TrueHD + Atmos playback from internal Andr
 | [Minirama retest](docs/minirama-retest.md) | Different stream counters; same Dolby Surround and isAtmos=0 |
 | [Second TrueHD sample](docs/truehd-second-sample.md) | Attempted alternate sample; identity verification failed, retest required |
 | [Vendor diagnostic boundary](docs/vendor-diagnostic-boundary.md) | FAILED_TRANSACTION and native Dolby/LAPAF dispatch |
+| [eARC endpoint and policy prototype](docs/earc-endpoint-and-policy.md) | Live write boundary, non-PCM device names and offline policy candidate |
 | [MAT carrier reference](docs/iec-mat-carrier-reference.md) | Offline framing, debug parser distinction and host tests |
 | [Privacy audit](docs/privacy-audit.md) | Optional independent privacy/debloat track |
 | [Privacy manifest findings](docs/privacy-manifest-results.md) | Analytics declarations, remote diagnosis, reversible candidate triage |

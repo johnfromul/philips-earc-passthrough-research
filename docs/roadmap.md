@@ -59,3 +59,5 @@ The original non-root objective and evidence are preserved above. The owner now 
 - Independent optional privacy/debloat track P0 inventory complete (166 packages); targeted manifest audit pending. [Results](privacy-inventory-results.md). No changes to device. [Plan](privacy-audit.md).
 
 - Privacy manifest audit complete for 13/14 packages. See [manifest findings](privacy-manifest-results.md); owner-select optional reversible package changes, no firmware removal. Audio transport and deployment still unresolved.
+
+- EARC non-PCM endpoint names and live DataManager callback identified; EarcOutput ProcessData no-op. Dedicated eARC-only policy proposal with host structural tests on representative XML; exact stock generation and endpoint inventory pending. [Notes](earc-endpoint-and-policy.md). No deployment.
