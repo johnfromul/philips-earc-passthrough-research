@@ -37,3 +37,7 @@ The wrapper independently exports _MI_LAPAF_FILTER_DecoderCommon_SetMatMlpOnly a
 The tester includes a dedicated read-only Inspect audio codecs button. It records ALL_CODECS and REGULAR_CODECS audio decoder names/types/capabilities plus MIME-only and rate/channel format discovery results for TrueHD, MAT and AC3/EAC3/JOC controls. It does not open or start a codec, request a privileged input, write audio, spoof HDMI, modify firmware, or assume a vendor MIME is supported. The report is overwritten on each run at the app's external files directory as codec_routes.log.
 
 If the runtime list confirms no TrueHD/MAT decoder, deprioritize MediaCodec and do not add a speculative MediaCodec playback mode. If it advertises a candidate, examine the reported component and documented output format before testing. A PCM-only decoder does not solve Atmos preservation. The remaining established I/O path is AudioTrack -> internal HAL/DSP, where TrueHD is recognized but Atmos is not. The exact Minirama HDMI identity check remains deferred at owner request.
+
+## Runtime follow-up
+
+[Runtime codec discovery and vendor parameter investigation](runtime-codecs-and-bypass.md) records the completed v0.2.4 query: both lists return null for all tested TrueHD and MAT MIME types. Public MediaCodec playback deprioritized.
