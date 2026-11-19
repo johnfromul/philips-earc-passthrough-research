@@ -54,3 +54,6 @@ The original non-root objective and evidence are preserved above. The owner now 
 - Stock file-level audit: system client, vendor HAL and policy match runtime hashes; active TV APEX client separately matches the same system bytes. Stock APEX layout unresolved; inspect retained workspace and active APEX inventory. Additional HAL eARC format classifier rejects IEC61937; no naive format alias or flash.
 
 - APEX symlink resolved; active factory source verified. Offline V670 client prototype generated and host-checked; HAL/policy remain unresolved. See [client experiment](iec-client-experiment.md). No deployment.
+
+- Offline MAT carrier reference implemented and host-tested; existing HAL burst parser traced to diagnostic-file path, not live write. Need genuine non-PCM output integration. [Reference](iec-mat-carrier-reference.md).
+- Independent optional privacy/debloat track P0: evidence collection via scripts/collect_privacy_audit.ps1, then classify actual packages before any changes. [Plan](privacy-audit.md).

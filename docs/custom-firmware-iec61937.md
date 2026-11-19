@@ -82,3 +82,7 @@ Re-disassembled the exact matching HAL from earlier TV extraction. utils_earc_se
 ## APEX resolved and offline client prototype
 
 See [IEC client experiment](iec-client-experiment.md). Stock APEX client is a symlink to /system/lib/libaudioclient.so; active APEX is factory 653670001. Client-only prototype generated and structurally verified offline on matching original ELF, 11 bytes changed across four sites; no runtime validation, HAL or policy patch. Original APEX remains unchanged. Not flashable.
+
+## MAT carrier and privacy tracks
+
+[Offline carrier reference](iec-mat-carrier-reference.md) bounds and validates the MAT burst before forwarding intact bytes; debug parser is not proof of a live playback path. [Privacy/debloat plan](privacy-audit.md) remains independent of the audio module. No security protections removed or firmware flashed.
