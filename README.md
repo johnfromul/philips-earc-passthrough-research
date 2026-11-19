@@ -20,6 +20,7 @@ A reproducible investigation of Dolby TrueHD + Atmos playback from internal Andr
 | [Native MKV test](docs/native-player-test.md) | Zero audio tracks, native player evidence |
 | [Extractor stage 4](docs/native-extractor-stage4.md) | Feature flag and SELinux denial |
 | [HDMI comparison](docs/hdmi-comparison.md) | Working hardware path and v0.2.2 test design |
+| [Minirama retest](docs/minirama-retest.md) | Different stream counters; same Dolby Surround and isAtmos=0 |
 | [Second TrueHD sample](docs/truehd-second-sample.md) | Attempted alternate sample; identity verification failed, retest required |
 | [MAT initialization](docs/mat-mlp-only-analysis.md) | Source-dependent decoder parameter, static evidence and limitations |
 | [JOC positive control](docs/joc-positive-control.md) | Internal tunneled Atmos success; isolates failure to TrueHD/MAT-specific path |

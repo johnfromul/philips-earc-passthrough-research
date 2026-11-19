@@ -22,3 +22,7 @@ live.log line references: 3272 starts TRUEHD_GROUP16 (16 AU); 3432 configures tr
 This reproduces the original grouped TrueHD behavior, but the actual sampled file identity during capture is unverified; the later device hash matches the original. It is distinct from the prepacked MAT variants, which never recognized usable audio frames. The successful internal JOC test identifies Atmos on the same MM_IN decoder index. The original TrueHD host/TV hashes matched; the alternate profile and exact sample identity should be verified before claiming an independently validated second Atmos stream. Do not repeat the three failed MAT variants.
 
 See [source-specific MAT initialization](mat-mlp-only-analysis.md).
+
+## Follow-up
+
+See [Minirama retest](minirama-retest.md) for session 929: materially different byte counts and the same decoder Atmos=0. The archive does not contain a device hash.

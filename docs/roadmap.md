@@ -18,9 +18,9 @@ Goal: MKV with TrueHD Atmos in Moonfin / internal Android apps, without root or 
 - [x] Test modes 8, 9, 10 in Auto: no usable audio, all head=0, HAL hasAtmos=-1. See [MAT tunnel results](mat-tunnel-results.md).
 - [x] Classify MAT failures: valid direct track and HW sync; IEC/LE no recognized audio frames; BE write stall. No repeat or new MAT variants without evidence of payload contract.
 - [x] Run E-AC3 JOC control, same Auto setting; contrast with MM TrueHD and HDMI MAT. JOC succeeds.
-- [ ] Repeat grouped TrueHD with Minirama after verifying installed SHA-256. Earlier attempt yielded normal audio/video, Dolby Surround, isAtmos=0, but the device file still matches the original Amaze hash. [Results and correction](truehd-second-sample.md).
+- [x] Repeat grouped TrueHD after alternate upload instructions: session 929 accepts 26.82 MB vs 17.79 MB in the prior attempt, normal audio/video, Dolby Surround, isAtmos=0. [Retest](minirama-retest.md). Exact installed hash remains to be recorded; earlier attempt's provenance was corrected.
 - [x] Host alternate sample ffprobe confirms Dolby TrueHD + Dolby Atmos, 48 kHz, 7.1, 24-bit; SHA-256 cd126fb45fc6a79b61ddc13d1a9aaab3db11856f4f0f5cdfef57bcf520e4f701.
-- [ ] Verify alternate sample hash on TV before and after rerun, and exact HDMI positive control; test non-Atmos control only if useful.
+- [ ] Record alternate sample hash on TV (new Probe capture helper hashes the selected file before/after). Confirm exact stream-copy alternate MKV through Windows Kodi WASAPI HDMI into TV; test non-Atmos control only if useful.
 
 ## Priority 3: native static analysis (if v0.2.2 fails)
 

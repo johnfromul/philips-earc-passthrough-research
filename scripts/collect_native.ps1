@@ -2,7 +2,8 @@
 param(
     [Parameter(Mandatory=$true)][ValidateSet('PassThrough','Auto')][string]$Mode,
     [ValidateSet('Native','HDMI','Probe')][string]$Source='Native',
-    [string]$Serial=$env:ANDROID_SERIAL
+    [string]$Serial=$env:ANDROID_SERIAL,
+    [ValidateSet('truehd.thd','control.eac3','truehd.iec','truehd.matle','truehd.matbe','tunnel_pcm51.s16le')][string]$ProbeSample='truehd.thd'
 )
 $ErrorActionPreference='Stop'
 $adb=(Get-Command adb.exe -ErrorAction Stop).Source
@@ -37,6 +38,10 @@ try{
     Note "Source (operator selected): $Source; mode (operator selected): $Mode"
     Note ('Operator test label: '+(Read-Host 'Sample / test mode label'))
     Capture 'firmware.txt' @('shell','getprop','ro.build.fingerprint')
+    if($Source -eq 'Probe'){
+        Note "Probe sample selected for hashing: $ProbeSample"
+        Capture 'sample_hash_before.txt' @('shell','sha256sum',"/sdcard/Android/data/ro.saitatter.audioprobe/files/$ProbeSample")
+    }
     $live=Start-Process -FilePath $adb -ArgumentList ($prefix+@('logcat','-b','all','-v','threadtime','-T','1')) -NoNewWindow -PassThru -RedirectStandardOutput (Join-Path $root 'live.log') -RedirectStandardError (Join-Path $root 'logcat_stderr.txt')
     Start-Sleep -Milliseconds 500
     if($live.HasExited){throw 'Live logcat exited; inspect logcat_stderr.txt.'}
@@ -65,6 +70,7 @@ try{
         if(-not $live.HasExited){Stop-Process -Id $live.Id -ErrorAction SilentlyContinue; $live.WaitForExit()}
     }
     if($Source -eq 'Probe'){
+        Capture 'sample_hash_after.txt' @('shell','sha256sum',"/sdcard/Android/data/ro.saitatter.audioprobe/files/$ProbeSample")
         Capture 'tunnel_pull.txt' @('pull','/sdcard/Android/data/ro.saitatter.audioprobe/files/tunnel.log',(Join-Path $root 'tunnel.log'))
     }
     Write-Host "Saved: $root. Review locally; do not commit raw logs."

@@ -1,2 +1,3 @@
 mode,session,accepted_bytes,complete_units,video_callbacks,head,operator_audio,operator_video,operator_display,hal_atmos,timeout_count
 TRUEHD_GROUP16_ALT_ATTEMPT_IDENTITY_UNVERIFIED,921,17789192,1829,715,1149408,normal,moving,Dolby Surround,0,0
+TRUEHD_GROUP16_MINIRAMA_RETEST,929,26824188,1868,733,1177296,normal,moving,Dolby Surround,0,0
