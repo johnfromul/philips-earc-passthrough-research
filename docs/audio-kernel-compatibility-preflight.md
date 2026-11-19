@@ -49,3 +49,24 @@ Received stock_kernel_config_audit.json (SHA-256 cb6f2aaa620c77f343679d59548c349
 Interpretation: build-time mandatory module signing is off, but runtime enforcement, vendor policy and verified boot remain separate. CONFIG_MODULE_SIG_ALL enables signing during module installation at build time; it does not imply every shipped module has a standard appended signature. See [Linux 5.15 module signing](https://docs.kernel.org/5.15/admin-guide/module-signing.html). MODVERSIONS, strict CFI and SCS require preserving the matching ABI/toolchain constraints. Module unloading support is not proof that the active TV audio stack may be unloaded safely. No runtime replacement attempted.
 
 Next collect the live configuration using `adb pull /proc/config.gz private/kernel_config.gz`, then compare its selected keys with the audit. Full configuration equality, even if established, would not prove byte-identical running kernel or drivers. Collect the live audio module listing read-only, if accessible. Do not unload or load drivers, reboot, flash, change security settings or infer exploit compatibility from these results.
+
+## Live kernel configuration and module inventory — owner follow-up
+
+Read and parsed both owner uploads directly. `kernel_config.gz`: 44,424 bytes, SHA-256 fde39c020eba440bd4c983ddb475267cf13c1986ac4c0c67cbee61c2b8c72338; decompressed config 203,071 bytes, SHA-256 2b1df3e8c81a2603e0fd771c32da2588149b4e5701cb82f2271109429bb93fbd. All 16 selected CONFIG values from the preceding stock boot report agree with the live config, including strict CFI, SCS, MODVERSIONS, MODULE_SIG=y, MODULE_SIG_FORCE=n and compressed ALSA. CONFIG_ARM64=y and CONFIG_COMPAT=y also confirmed live. This is selected-key equality, not full config or kernel binary equality.
+
+`kernel_modules_live.txt`: SHA-256 81eeb41bd3adbc5139cfe80ccd540212f35ed0b6190ac4504a914b17be290a25; 182 entries, all Live. All six audited stock module names appear in the running inventory (hyphens normalized to underscores).
+
+| Module | Resident bytes | Refcount | Named holders |
+|---|---:|---:|---|
+| mtk_earc | 65536 | 1 | none listed |
+| mtk_tvsnd_machine | 106496 | 4 | none listed |
+| mtk_tvsnd_platform | 192512 | 4 | mtk_tvsnd_machine |
+| mtk_tvsnd_dsp_loader | 16384 | 0 | none listed |
+| mtk_tvsnd_soc | 1228800 | 3 | mtk_tvsnd_machine, mtk_tvsnd_platform, mtk_tvsnd_dsp_loader |
+| audio_public_if | 16384 | 2 | audio_ipauth, mtk_tvsnd_soc |
+
+All six have (OE) flags. Under standard Linux 5.15 semantics O means out-of-tree and E means unsigned/untrusted signature accepted when loaded (see [taint documentation](https://docs.kernel.org/5.15/admin-guide/tainted-kernels.html) and [module signing](https://docs.kernel.org/5.15/admin-guide/module-signing.html)). The inventory has 127 OE, 39 E, 16 POE. This corroborates the previous observation that the six on-disk stock binaries lack an appended signature. It does not establish that arbitrary modified modules can load now, that an unprivileged process can load them, or that the stock and installed files are identical. Resident sizes are not on-disk ELF sizes. Zero references do not prove safe unload. Do not unload the active audio stack.
+
+The runtime holder graph corroborates the static audio dependency graph, particularly soc -> machine/platform/loader consumers and platform -> machine consumer. mtk_memory and tee also have broad non-audio consumers. Two additional loaded audio modules, mtk_aloop (61,440 B, refcount 2) and snd_aloop (36,864 B, refcount 0), are possible diagnostics leads; neither demonstrates an IEC61937 or HDMI virtual input path. Investigate their supported audio formats before drawing conclusions. No changes to authorization or content protection proposed.
+
+Next step: inspect the stock vendor_dlkm module load lists and init configuration to determine actual early/late ordering, and audit available ALSA endpoints read-only. Prioritize the userspace route; kernel replacements remain conditional on an established development/recovery path and proven transport need. No TV commands executed or changes made in this analysis.
