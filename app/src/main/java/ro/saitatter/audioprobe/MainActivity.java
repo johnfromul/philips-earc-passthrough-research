@@ -29,7 +29,7 @@ public final class MainActivity extends Activity {
     private Spinner modes, outcome;
     private TextView output, state;
     private ScrollView scroll;
-    private Button inspect, open, play, stop, mark;
+    private Button inspect, open, play, stop, mark, tunnel;
     private AudioManager manager;
     private final Object logLock=new Object();
 
@@ -42,7 +42,7 @@ public final class MainActivity extends Activity {
         if(dir==null) dir=getFilesDir();
         logFile=new File(dir,"probe.log");
         LinearLayout root=new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL); root.setPadding(24,16,24,16);
-        TextView title=new TextView(this); title.setText("Audio Passthrough Tester  •  v0.1.1"); title.setTextSize(25); root.addView(title);
+        TextView title=new TextView(this); title.setText("Audio Passthrough Tester  •  v0.2.0"); title.setTextSize(25); root.addView(title);
         TextView warn=new TextView(this); warn.setText("Turn soundbar volume LOW. Select eARC. STOP immediately if noise occurs. No automatic playback."); warn.setTextSize(15); root.addView(warn);
         modes=new Spinner(this); ArrayAdapter<ProbeMode> choices=new ArrayAdapter<>(this,android.R.layout.simple_spinner_item,ProbeMode.values()); choices.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item); modes.setAdapter(choices); root.addView(modes);
         LinearLayout buttons=new LinearLayout(this); root.addView(buttons);
@@ -50,6 +50,7 @@ public final class MainActivity extends Activity {
         open=button(buttons,"Open only",v->{ ProbeMode m=selected(); runJob(()->test(m,false)); });
         play=button(buttons,"Play 20 sec",v->confirm());
         stop=button(buttons,"STOP",v->{ cancel=true; log("USER STOP requested"); }); stop.setEnabled(false);
+        tunnel=button(buttons,"Full A/V tunnel",v->startActivity(new android.content.Intent(this,TunnelActivity.class)));
         LinearLayout results=new LinearLayout(this); root.addView(results);
         outcome=new Spinner(this); ArrayAdapter<String> options=new ArrayAdapter<>(this,android.R.layout.simple_spinner_item,new String[]{"Select observed result","Dolby Atmos + normal sound","Dolby Surround + normal sound","PCM + normal sound","No sound","Beep / noise","Other / failed"}); options.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item); outcome.setAdapter(options); results.addView(outcome,new LinearLayout.LayoutParams(0,-2,1));
         mark=button(results,"Record result",v->{ if(outcome.getSelectedItemPosition()>0) log("OBSERVED by user ["+selected().name()+"]: "+outcome.getSelectedItem()); });
@@ -77,7 +78,7 @@ public final class MainActivity extends Activity {
         if(busy) return; busy=true; cancel=false; controls(false);
         worker.execute(()->{try{job.run();}catch(Exception e){log("FAIL: "+e.getClass().getSimpleName()+": "+e.getMessage()); Log.e(TAG,"Job failed",e);}finally{runOnUiThread(()->{busy=false; controls(true);});}});
     }
-    private void controls(boolean enabled){ inspect.setEnabled(enabled); open.setEnabled(enabled); play.setEnabled(enabled); modes.setEnabled(enabled); mark.setEnabled(enabled); stop.setEnabled(!enabled); state.setText(enabled?"Ready | result: "+logFile:"Running — press STOP if noise occurs"); if(!enabled)stop.requestFocus(); else play.requestFocus(); }
+    private void controls(boolean enabled){ tunnel.setEnabled(enabled); inspect.setEnabled(enabled); open.setEnabled(enabled); play.setEnabled(enabled); modes.setEnabled(enabled); mark.setEnabled(enabled); stop.setEnabled(!enabled); state.setText(enabled?"Ready | result: "+logFile:"Running — press STOP if noise occurs"); if(!enabled)stop.requestFocus(); else play.requestFocus(); }
     private String device(AudioDeviceInfo d) {return d==null?"none":("id="+d.getId()+" type="+d.getType()+" name="+d.getProductName());}
     private void capabilities(){
         log("=== CAPABILITIES ===");
