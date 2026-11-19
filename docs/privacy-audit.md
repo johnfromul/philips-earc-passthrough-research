@@ -32,3 +32,7 @@ Observe device traffic via the owner's local DNS resolver/router under matched s
 ## Phase P1
 
 After actual package inventory, classify with evidence: KEEP/core, optional feature, verified telemetry/ads candidate, unknown. Inspect per-package manifest/permissions/services and dependencies as needed; reversible user-0 disabling only of specifically identified optional packages after review, one at a time, with re-enable instructions and rollback. Keep audio regression tests, input switching, launcher/settings, remote, streaming/DRM if desired, OTA security and standby. Preserve the ability to receive official updates. Network-domain blocks only for well-understood telemetry destinations, not certificate/security/update services; verify functionality and avoid blocking shared service domains. No package removal or setting modification performed in P0. Later integrate only verified changes into a separate optional privacy profile; never bundle with a first audio experiment.
+
+## P0 result
+
+[Inventory results](privacy-inventory-results.md): 166 system packages, 157 enabled, 9 disabled, 34 UID 1000. No verified spyware or traffic attribution. Next targeted manifest audit with scripts/collect_privacy_details.ps1; all changes remain opt-in and independently reversible.

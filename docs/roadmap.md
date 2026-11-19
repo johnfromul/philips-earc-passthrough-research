@@ -56,4 +56,4 @@ The original non-root objective and evidence are preserved above. The owner now 
 - APEX symlink resolved; active factory source verified. Offline V670 client prototype generated and host-checked; HAL/policy remain unresolved. See [client experiment](iec-client-experiment.md). No deployment.
 
 - Offline MAT carrier reference implemented and host-tested; existing HAL burst parser traced to diagnostic-file path, not live write. Need genuine non-PCM output integration. [Reference](iec-mat-carrier-reference.md).
-- Independent optional privacy/debloat track P0: evidence collection via scripts/collect_privacy_audit.ps1, then classify actual packages before any changes. [Plan](privacy-audit.md).
+- Independent optional privacy/debloat track P0 inventory complete (166 packages); targeted manifest audit pending. [Results](privacy-inventory-results.md). No changes to device. [Plan](privacy-audit.md).

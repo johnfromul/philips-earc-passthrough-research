@@ -1,0 +1,27 @@
+package,uid,state,category,notes
+com.tcl.channelplus,10082,enabled,OPTIONAL_CANDIDATE,Online channels (inferred)
+com.tcl.magiconnectfree,10080,enabled,OPTIONAL_CANDIDATE,Companion control (inferred)
+com.tcl.smartalexa,10077,enabled,OPTIONAL_CANDIDATE,Alexa integration (inferred)
+com.tcl.browser,10136,enabled,OPTIONAL_CANDIDATE,TCL browser (APK name)
+com.tcl.usercenter,10060,enabled,OPTIONAL_CANDIDATE,TCL account interface (inferred)
+com.tcl.dashboard,10072,enabled,AUDIT,Dashboard; quick panel dependencies unknown
+com.tcl.smartlink.core,10137,enabled,AUDIT,SmartLink role unknown
+com.tcl.t_solo,10081,enabled,AUDIT,Unknown
+com.tcl.ocean.instructions,10075,enabled,OPTIONAL_CANDIDATE,Instructions (inferred)
+com.tcl.repairguide,10076,enabled,AUDIT,Repair feature; retain until reviewed
+com.google.android.feedback,10089,enabled,AUDIT,Feedback; actual network activity unverified
+com.mediatek.backgrounddetection,10094,enabled,AUDIT,Background detection purpose unknown
+com.android.adservices.api,10133,enabled,AUDIT,Ad API module; usage unverified
+com.android.tv.feedbackconsent,1000,enabled,KEEP,Consent interface and privileged UID
+com.tcl.guard,1000,enabled,KEEP,TGuard; security/recovery role unknown
+com.tcl.ttvs,1000,enabled,KEEP,TTVSCore; dependency unknown
+com.tcl.systemserver,1000,enabled,KEEP,Core TCL system service
+com.tcl.tvinput,1000,enabled,KEEP,TV input
+com.mediatek.speakerservice,1000,enabled,KEEP,Speaker service
+com.dolby.android.audio.calibration,10066,enabled,KEEP,Dolby calibration
+com.dolby.android.audio.service,10091,enabled,KEEP,Dolby audio service
+com.tcl.UpdatePeripheral,1000,enabled,KEEP,Peripheral updates
+com.tcl.logkit,10069,disabled,PRESERVE_DISABLED,Already disabled
+com.tcl.waterfall.overseas,10078,disabled,PRESERVE_DISABLED,Already disabled
+com.google.android.apps.tv.launcherx,10042,disabled,PRESERVE_DISABLED,Already disabled
+com.netflix.ninja,10071,disabled,PRESERVE_DISABLED,Already disabled
