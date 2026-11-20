@@ -29,6 +29,7 @@ Plan and verified details: **[docs/roadmap.md](docs/roadmap.md)**.
 | Build, deploy, test | [reproduction](docs/reproduction.md) |
 | OEM report draft | [upstream-report](docs/upstream-report.md) |
 | Evidence hashes | [evidence/README](evidence/README.md) |
+| Second TV handoff | [second-tv-handoff](docs/second-tv-handoff.md) |
 
 ## Quick start (Windows)
 
