@@ -30,6 +30,7 @@ Plan and verified details: **[docs/roadmap.md](docs/roadmap.md)**.
 | OEM report draft | [upstream-report](docs/upstream-report.md) |
 | Evidence hashes | [evidence/README](evidence/README.md) |
 | Second TV handoff | [second-tv-handoff](docs/second-tv-handoff.md) |
+| C655 actual Realtek baseline | [c655-realtek-baseline](docs/c655-realtek-baseline.md) |
 
 ## Quick start (Windows)
 
