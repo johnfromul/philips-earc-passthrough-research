@@ -2,6 +2,12 @@
 
 Handoff for continuing on another PC / new Claude Code session. Goal: test whether the C9K hypothesis also applies to the owner's second TCL TV (model and firmware not yet recorded; possibly a C655 variant).
 
+## Verified C655 owner baseline — 2026-11-21
+
+The second TV has now been identified from an ADB evidence bundle as **Realtek RTD2875P / rtd6748, G10 board, R75PT01 V461, Android 12, kernel 5.4.274+, slot _a, AVB locked/green, SELinux enforcing**. It is **not** MT5896. Current policy exposes E-AC3 JOC/AC4 but not TrueHD/MAT/IEC61937; runtime eARC service reports support but no active link in the captured state. Primary HAL `audio.primary.rtd6748.so` was not pullable without additional access. No playback comparison or UART capture was in the archive.
+
+See [C655 Realtek baseline](c655-realtek-baseline.md) for evidence hashes and next steps. Remaining parts of this document are **the earlier pre-capture plan**, retained for context; C9K patch hashes and the MatMlpOnly idea must not be applied to C655 without Realtek-specific proof.
+
 ## Hypothesis under test (from C9K, V670 GB AU04)
 
 - TrueHD Atmos from internal apps plays clean but as **Dolby Surround** (`MAT_TRUEHD, isAtmos=0`), while TrueHD over external HDMI and E-AC3 JOC from apps give **Atmos** (`isAtmos=1`). See [roadmap](roadmap.md) "What is settled".
