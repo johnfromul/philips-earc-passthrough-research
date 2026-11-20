@@ -12,6 +12,7 @@ import shutil
 import struct
 import subprocess
 import tempfile
+import tarfile
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -23,6 +24,7 @@ PARTS = ("boot", "init_boot", "vendor_boot", "dtbo", "mboot", "vbmeta",
 PROPS = """ro.product.model ro.product.name ro.product.device ro.product.board
 ro.product.vendor.model ro.product.vendor.device ro.product.manufacturer
 ro.hardware ro.hardware.version_id ro.board.platform ro.soc.model ro.soc.manufacturer
+ro.software.version_id
 ro.build.fingerprint ro.vendor.build.fingerprint ro.build.display.id ro.build.id
 ro.build.version.release ro.build.version.sdk ro.build.version.incremental
 ro.build.version.security_patch ro.product.cpu.abilist ro.product.cpu.abilist64
@@ -49,6 +51,24 @@ def write_json(path, data):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2, ensure_ascii=True)+"\n", encoding="utf-8")
 
+def inspect_legacy_tar(path):
+    """Inventory a plain tar Update.img; never extract members to disk."""
+    rows, configs, warnings = [], [], []
+    with tarfile.open(path, mode="r:") as tar:
+        for member in tar:
+            if len(rows) >= 20000:
+                warnings.append("Member limit reached; incomplete inventory.")
+                break
+            rows.append({"name":member.name,"bytes":member.size,"regular_file":member.isfile()})
+            if (member.isfile() and PurePosixPath(member.name).name.lower()=="config.txt"
+                    and member.size <= 65536 and len(configs)<16):
+                with tar.extractfile(member) as f:
+                    data=f.read(65537)
+                configs.append({"name":member.name,"sha256":hashlib.sha256(data).hexdigest(),
+                                "text":data.decode("utf-8","replace")})
+    return {"entries":rows,"installer_config_candidates":configs,"warnings":warnings,
+            "payload_status":"Legacy plain tar inventory only; no installer semantics or compatibility verified."}
+
 def safe_remote(p):
     return SAFE_PATH.fullmatch(p) is not None and all(x not in (".", "..") for x in p.split("/")[1:])
 
@@ -62,7 +82,7 @@ def candidate(path):
     if n in ("modules.load", "modules.dep", "modules.softdep", "modules.alias") or n.startswith("modules.load."):
         return True
     if p.suffix.lower() in (".xml", ".conf", ".ini", ".json", ".rc", ".cfg", ".txt"):
-        return bool(CONF.search(n)) or ("linkerconfig" in path and n.endswith(".txt"))
+        return bool(CONF.search(n)) or n.startswith(("hid_", "sid_")) or ("linkerconfig" in path and n.endswith(".txt"))
     if ("firmware" in p.parts or "dsp" in p.parts or "audio" in p.parts):
         return bool(CONF.search(n) or LIB.search(n)) and p.suffix.lower() in (".bin", ".dat", ".fw", ".tbl", ".blob")
     return False
@@ -254,6 +274,10 @@ class Collector:
             else:
                 inventory={"filename":a.ota.name,"bytes":a.ota.stat().st_size,
                            "sha256":digest(a.ota),"payload_status":"Non-ZIP/PKG: inventory only"}
+                try:
+                    inventory.update(inspect_legacy_tar(a.ota))
+                except (tarfile.TarError, OSError) as e:
+                    inventory["legacy_tar_status"]="Not readable as plain tar: "+str(e)
             write_json(self.out/"ota_inventory.json",inventory)
             parts=inventory.get("payload",{}).get("partitions",[])
             for p in parts:
