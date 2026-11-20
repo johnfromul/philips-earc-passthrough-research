@@ -1,17 +1,12 @@
 #!/usr/bin/env python3
 """Static trace of struct-field writers/readers in an ARM32 (Thumb-2) ELF. Read-only.
 
-Per-function disassembly over the ELF symbol table (reliable Thumb sync, unlike a
-linear section sweep), using capstone. Used for the MatMlpOnly consumer trace; see
-docs/mat-mlp-consumer-trace.md. Pass the analysis target as an argument; run isolated
-(`python -I`). Needs: pip install capstone.
+Per-function disassembly over the ELF symbol table (reliable Thumb sync), via capstone.
+See docs/mat-mlp-consumer-trace.md and docs/ms12-mat-transcode-trace.md. Pass the target
+as an argument; run isolated (python -I). Needs: pip install capstone.
 
-Usage:
-  python -I inspect_struct_field.py <lib.so> setter            # dump SetMatMlpOnly @0x16a9d8
-  python -I inspect_struct_field.py <lib.so> scanoff 0x348     # struct-base readers/writers of +off
-  python -I inspect_struct_field.py <lib.so> callers 0x16a9d8  # bl/blx to a VA
-  python -I inspect_struct_field.py <lib.so> sym <substr>      # function symbols matching substr
-  python -I inspect_struct_field.py <lib.so> func 0x1713b0 0x2a4  # disassemble VA for length
+Commands: setter | scanoff <hexoff> (imm<4096 field) | scanimm <hexoff> (large reg-indexed
+offset) | callers <hexva> | sym <substr> | func <hexva> <hexlen>.
 """
 import sys, struct
 from capstone import Cs, CS_ARCH_ARM, CS_MODE_THUMB, CS_MODE_ARM
@@ -199,6 +194,38 @@ elif cmd == 'scanoff':
     for addr, tag, mn, ops, fname, fva in sorted(hits):
         print(f"0x{addr:x} [{tag}] {mn:8} {ops:28} | {fname}+0x{addr-fva:x}")
     print(f"# hits (struct-base only) for +0x{target:x}: {len(hits)}")
+
+elif cmd == 'scanimm':
+    # find any instruction loading immediate == target (movw/movt/mov/add/sub) -> large struct offsets
+    target = int(sys.argv[3], 16)
+    thumb_bit = {}
+    for st in symtabs:
+        n = st['size'] // 16
+        for i in range(n):
+            o = st['offset'] + i*16
+            st_name, st_value, st_size, st_info, st_other, st_shndx = struct.unpack_from('<IIIBBH', data, o)
+            if (st_info & 0xf) == 2 and st_value:
+                thumb_bit[st_value & ~1] = st_value & 1
+    hits = []
+    for fva, fsz, fname in sym_by_va:
+        if fsz == 0: fsz = 0x400
+        o = va_to_off(fva)
+        if o is None: continue
+        md = md_t if thumb_bit.get(fva, 1) else md_a
+        insns = list(md.disasm(data[o:o+fsz], fva))
+        for idx, ins in enumerate(insns):
+            if ins.mnemonic in ('movw','mov','mov.w','add','addw','sub','subw','ldr'):
+                for g in ins.operands:
+                    if g.type == 2 and g.imm == target:
+                        # look at next couple insns for ldr/str using the reg (GET/SET classification)
+                        ctx = []
+                        for j in range(idx, min(idx+4, len(insns))):
+                            ctx.append(insns[j].mnemonic)
+                        acc = 'SET' if any('str' in m for m in ctx) else ('GET' if any('ldr' in m for m in ctx[1:]) else '?')
+                        hits.append((ins.address, acc, ins.mnemonic, ins.op_str, fname, fva))
+    for addr, acc, mn, ops, fname, fva in sorted(hits):
+        print(f"0x{addr:x} [{acc}] {mn:8} {ops:22} | {fname}+0x{addr-fva:x}")
+    print(f"# sites referencing imm 0x{target:x}: {len(hits)}")
 
 elif cmd == 'callers':
     # find bl/blx that target the given VA
