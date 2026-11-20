@@ -2,7 +2,7 @@
 
 ## Scope and verified input
 
-Read-only static analysis of the owner-supplied stock mtk-tvsnd-soc.ko (US AU02), SHA-256 0720c8c96dc6a84b112ade4877058aaa7caa37158830e201d148e7ff57e5b7e4, independently recalculated again. Installed GB AU04 module byte identity is still unknown. Addresses below are section-relative offsets of the AArch64 ET_REL object. No code executed on the TV.
+Read-only static analysis of the owner-supplied stock mtk-tvsnd-soc.ko (US AU02), SHA-256 0720c8c96dc6a84b112ade4877058aaa7caa37158830e201d148e7ff57e5b7e4, independently recalculated again. **Update 2026-11-20:** the live GB AU04 module pulled from the device has the identical SHA-256 — byte-identical, so these findings apply verbatim to the running firmware. See [dsp-dolby-param-map](dsp-dolby-param-map.md). Addresses below are section-relative offsets of the AArch64 ET_REL object. No code executed on the TV.
 
 ## Evidence: MAT bypass and Auto are distinct
 
