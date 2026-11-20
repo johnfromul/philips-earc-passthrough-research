@@ -20,7 +20,7 @@ Plan and verified details: **[docs/roadmap.md](docs/roadmap.md)**.
 | E-AC3 JOC positive control | [joc-positive-control](docs/joc-positive-control.md) |
 | TrueHD grouped retest | [minirama-retest](docs/minirama-retest.md) |
 | MAT tunnel failures | [mat-tunnel-results](docs/mat-tunnel-results.md) |
-| MatMlpOnly static analysis | [mat-mlp-only-analysis](docs/mat-mlp-only-analysis.md), [mat-bypass-source-predicates](docs/mat-bypass-source-predicates.md), [mat-mlp-hook-strategy](docs/mat-mlp-hook-strategy.md) |
+| MatMlpOnly static analysis | [mat-mlp-only-analysis](docs/mat-mlp-only-analysis.md), [mat-bypass-source-predicates](docs/mat-bypass-source-predicates.md), [mat-mlp-hook-strategy](docs/mat-mlp-hook-strategy.md), [mat-mlp-consumer-trace](docs/mat-mlp-consumer-trace.md) |
 | Decoder/DSP internals | [decoder-dispatch-and-parser](docs/decoder-dispatch-and-parser.md), [decoder-config-contract](docs/decoder-config-contract.md), [mm-dsp-input-boundary](docs/mm-dsp-input-boundary.md), [kernel-audio-driver-audit](docs/kernel-audio-driver-audit.md), [dsp-candidate-audit](docs/dsp-candidate-audit.md), [truehd-parser-alignment](docs/truehd-parser-alignment.md) |
 | MKV extractor gate | [native-extractor-stage4](docs/native-extractor-stage4.md), [native-player-test](docs/native-player-test.md) |
 | IEC61937 firmware design | [custom-firmware-iec61937](docs/custom-firmware-iec61937.md), [iec-client-experiment](docs/iec-client-experiment.md), [earc-endpoint-and-policy](docs/earc-endpoint-and-policy.md), [iec-mat-carrier-reference](docs/iec-mat-carrier-reference.md), [earc-output-and-recovery-gate](docs/earc-output-and-recovery-gate.md), [virtual-hdmi-audio-source](docs/virtual-hdmi-audio-source.md) |
