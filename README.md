@@ -56,6 +56,18 @@ python .\tools\collect_tv_audio_audit.py --label C655-stock --logs
 
 See [multi-device audio audit](docs/multi-device-audio-audit.md) for device selection, optional package inventory, offline stock OTA/image verification and filesystem extraction. Outputs remain under git-ignored private/device_audits. This does not root or modify the TV. No cross-model firmware or patch compatibility is assumed.
 
+## Single ZIP: TV baseline + optional ESP32 UART
+
+Use the combined wrapper to put the existing ADB/stock audit and ESP bridge diagnostics into **one** private ZIP:
+
+```powershell
+python .\tools\collect_tv_research_bundle.py --label C655-stock --no-esp
+# With commissioned ESP, correctly wired and separately powered:
+python .\tools\collect_tv_research_bundle.py --label C655-uart --skip-adb --esp-toolkit "..\tcl-tv-toolkit" --esp-host "ESP_IP" --uart-seconds 90
+```
+
+See [combined collector guide](docs/combined-device-and-uart-collector.md). UART is **passive RX only**; the wrapper never sends bootloader commands or roots/flashes a TV. Select a specific ADB target with `--serial` when multiple TVs are connected. The ZIP is saved under `private/research_bundles/` and must be reviewed before sharing.
+
 ## Layout
 
 ```text
