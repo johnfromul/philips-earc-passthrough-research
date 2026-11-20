@@ -195,6 +195,8 @@ class Collector:
             "audio_vendor_services":'for s in vendor.dolby.audio.ms12.IMs12/default vendor.mediatek.hardware.audioext.IAudioExt/audioext vendor.tcl.audio.ITclAudio/default vendor.tcl.audio.ITclAudio/taudio; do echo "=== $s ==="; dumpsys -t 8 "$s"; done',
             "audio_properties":'getprop | grep -Ei "audio|dolby|truehd|earc|spdif|ms12|\\.mkv\\.|tcl.*version|firmware"',
             "module_paths":"ls -ld /vendor/lib/modules /vendor_dlkm/lib/modules /system_dlkm/lib/modules /odm/lib/modules /odm_dlkm/lib/modules",
+            "device_tree_identity":'for p in /proc/device-tree/model /proc/device-tree/compatible; do echo "=== $p ==="; cat "$p"; echo; done',
+            "live_audio_dt_status":'for p in /sys/bus/platform/devices/*; do case "$p" in *audio*|*sound*|*tvsnd*|*earc*|*offload*|*aloop*) echo "=== $p ==="; if [ -e "$p/of_node/status" ]; then cat "$p/of_node/status"; echo; fi; if [ -e "$p/of_node/compatible" ]; then cat "$p/of_node/compatible"; echo; fi; ;; esac; done',
         }
         if a.privacy_inventory:
             queries["installed_packages"]="pm list packages -f"
@@ -224,9 +226,14 @@ class Collector:
         rc,listing=self.shell("firmware_paths","find "+dirs+" -type f",180)
         # Include known symlinked clients and stock-compatible config names.
         _,links=self.shell("audio_symlink_paths","find /system/lib /system/lib64 /vendor/lib /vendor/lib64 /apex -name libaudioclient.so",120)
-        _,alias=self.shell("module_alias_paths","ls -1 /vendor/lib/modules/ /odm/lib/modules/",60)
-        paths=sorted({p.strip() for p in (listing+"\n"+links).splitlines()
-                      if safe_remote(p.strip()) and candidate(p.strip())})
+        _,alias=self.shell("module_alias_paths",'for d in /vendor/lib/modules /odm/lib/modules /system/lib/modules; do for p in "$d"/*; do [ ! -f "$p" ] || echo "$p"; done; done',60)
+        def priority(path):
+            n=PurePosixPath(path).name.lower()
+            if n.startswith(("audio.primary.","libaudioclient.","libmi3_audio","libaudiopipeline","libms12","libaudioparser","libcodec2_mtk","libcodec2.")) or n.endswith(".ko") or "audio_policy" in n or "media_codecs" in n:
+                return (0,path)
+            return (1,path)
+        paths=sorted({p.strip() for p in (listing+"\n"+links+"\n"+alias).splitlines()
+                      if safe_remote(p.strip()) and candidate(p.strip())},key=priority)
         # Direct module paths from mounted vendor_dlkm are normally in the find result.
         write_json(self.out/"live_candidates.json",paths)
         if not a.reports_only:
@@ -284,6 +291,9 @@ class Collector:
                 records.append({"name":n,"bytes":size,"sha256":h,"matches_ota_manifest":ok if e else None})
                 if ok:
                     images[n]=src
+            for n in PARTS:
+                if n in expected and not any(r["name"]==n for r in records):
+                    records.append({"name":n,"status":"not extracted","matches_ota_manifest":None})
             write_json(self.out/"stock_image_inventory.json",records)
         # Never parse/extract an image with unknown or mismatched manifest provenance.
         result={"live_tree_verified":False,"overlays_applied":False,"warnings":[]}
@@ -362,6 +372,9 @@ class Collector:
                                     self.status.append({"name":"apex:"+rel,"error":str(e)})
                     except (ValueError,OSError,subprocess.CalledProcessError) as e:
                         self.status.append({"name":"filesystem:"+n,"error":str(e)})
+                    finally:
+                        if (work/n).is_dir():
+                            shutil.rmtree(work/n,ignore_errors=True)
         # Compare by path suffix only when unambiguous; preserve unknowns separately.
         live=[x for x in self.files if x.get("archive_path","").startswith("live_files/")]
         stock=[x for x in self.files if x.get("archive_path","").startswith("stock_files/")]
