@@ -45,6 +45,16 @@ python .\tools\host_test.py         # host-side parser/grouping tests
 
 Keep soundbar volume very low when testing encoded formats.
 
+## Collect evidence on additional TV models
+
+For any authorized TCL TV connected over ADB, including C655 variants:
+
+```powershell
+python .\tools\collect_tv_audio_audit.py --label C655-stock --logs
+```
+
+See [multi-device audio audit](docs/multi-device-audio-audit.md) for device selection, optional package inventory, offline stock OTA/image verification and filesystem extraction. Outputs remain under git-ignored private/device_audits. This does not root or modify the TV. No cross-model firmware or patch compatibility is assumed.
+
 ## Layout
 
 ```text
