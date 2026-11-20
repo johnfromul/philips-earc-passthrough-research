@@ -91,3 +91,41 @@ the decoder successfully extracted. On this firmware that choice is bound to `so
 2. Compare the HAL's MM vs HDMI decoder-open arguments to confirm the mode is chosen from the source, and whether any
    single value (HAL op-mode arg, MS12 `dec_mode`, or DSP `dolby_param` byte) flips it — the only thing that would
    make a runtime hook effective, and the correct hook point if so.
+
+## Follow-up: HAL filter topology — the discrete MAT filters are stubs (2026-11-20)
+
+Tracing the control plane in `libmi3_audio_hal.so` (same live-pulled binary) shows the per-codec APAF filters that
+would carry a `MlpOnly` lever are **vestigial on this build**:
+
+| HAL filter entry | State |
+|---|---|
+| `_MI_APAF_FILTER_MAT_ENC_Init` / `_Reset` / `_ProcessData` | 4-byte stubs (`movs r0,#0; bx lr`) |
+| `_MI_APAF_FILTER_MAT_ENC_SetParameter` (0x180680) | thin forwarder → generic dispatch thunk (0x18cbd4 → 0x18e310) |
+| `_MI_APAF_FILTER_MS12V2_MAT_SetParameter` (0x1864d6) | 4-byte stub |
+| `_MI_APAF_FILTER_MS12V2_DDPDEC/HEAAC/AC4_SetParameter` | 4-byte stubs |
+| `_MI_APAF_FILTER_MS12V2_FLAP_SetParameter` (0x13dbf8, 0xfe4) | **the only real MS12V2 parameter handler** |
+
+So the MAT encoder is **not** run through the discrete `MAT_ENC` filter here (its `ProcessData` is a no-op); the
+integrated **FLAP** pipeline (MS12 "full" filter) plus the audio DSP do the work. `MlpOnly` is advertised in
+`MAT_ENC_GetSupportedParameterList` and forwarded, and the HAL also exposes `atmos_enable` / `atmos_disEn` /
+`OBJECT` parameters, but the live Atmos-enable the pipeline reads is the FLAP/DAP field `+0x438`
+(`_mi_apaf_filter_ms12v2_flap_get_atmos_enable`, sourced from a JSON profile), while the **eARC MAT object carriage**
+is gated inside `libms12v27.so` at encoder `+0x212c` (`mat_enc_is_evo_present`).
+
+### Consequence — there is no single readable userspace flag proven to flip it
+
+The behaviour has a source-bound control named for it at every layer — topology `MatMlpOnly`, the HAL
+`DecoderCommon.SetMatMlpOnly` (write-only, [mat-mlp-consumer-trace](mat-mlp-consumer-trace.md)), the HAL MAT_ENC
+`MlpOnly` parameter, and the kernel `MAT_HDMI_bypass`/`dolby_param` gated strictly on `eAudioSource`
+([mat-bypass-source-predicates](mat-bypass-source-predicates.md)) — but the discrete MAT filters being stubs means
+the operative path is the FLAP pipeline + DSP shared memory, not a per-codec HAL setter. No statically-readable
+userspace flag has been shown to be the lever, and the final decision crosses into the DSP firmware (black box).
+
+### To settle it (each needs more than static analysis)
+
+- **Dynamic (needs root):** Frida on `_MI_APAF_FILTER_MS12V2_FLAP_SetParameter` and on the DSP `dolby_param` write
+  (`HAL_AUDIO_DigitalTx_ApplySetting`), logging params during MM TrueHD vs HDMI TrueHD; and read MS12 encoder
+  `+0x212c` / the emitted MAT to see object carriage. This is the correct hook point — not `DecoderCommon.SetMatMlpOnly`.
+- **Kernel module layout:** inspect the live GB AU04 `mtk-tvsnd-soc.ko` `dolby_param` struct for an mlp-only/atmos
+  field beside `MAT_HDMI_bypass` (offset `dolby_param+0x1c`), to see whether the kernel passes an object switch to the
+  DSP distinct from the HDMI-bypass gate.
