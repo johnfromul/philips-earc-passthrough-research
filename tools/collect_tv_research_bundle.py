@@ -115,6 +115,8 @@ def main():
         p.error("--uart-seconds must be 0–600")
     if a.no_esp and a.uart_seconds:
         p.error("--uart-seconds requires ESP enabled")
+    if a.no_esp and a.skip_adb:
+        p.error("Nothing to collect: --skip-adb and --no-esp cannot be combined")
     if a.skip_adb and (a.ota or a.images):
         p.error("For stock-only inspection call tools/collect_tv_audio_audit.py --offline-only")
     if a.images and not a.ota:
