@@ -1,0 +1,132 @@
+{
+  "schema": "tcl-hdmi-service-bench-observations/v1",
+  "date": "2026-11-21",
+  "source": "owner-reported in research session; not independently replicated",
+  "tv": {
+    "marketing_family": "TCL C655",
+    "retail_size": "not recorded",
+    "board": "G10",
+    "soc_model": "RTD2875P",
+    "soc_manufacturer": "Realtek",
+    "ro_hardware": "rtd6748",
+    "firmware": "V8-R75PT01-LF1V461",
+    "android": "12",
+    "kernel": "5.4.274+",
+    "adb_source": "docs/c655-realtek-baseline.md",
+    "service_hdmi_port": "HDMI 2 based on model documentation; physical marking unconfirmed"
+  },
+  "equipment": {
+    "adapter": "Delock 65168 HDMI-A female to 20 screw terminal",
+    "hdmi_cable": "passive copper male-male",
+    "esp": "ESP32-WROOM-32 development board, micro USB",
+    "multimeter": "Lexman, exact model not reported",
+    "jumpers": "Dupont leads",
+    "host": "Windows PowerShell",
+    "serial_port_candidates": [
+      "COM3",
+      "COM4"
+    ],
+    "esp_port_confirmed": null,
+    "esp_firmware_uploaded": false,
+    "esp_loopback_tested": false
+  },
+  "continuity_mode": {
+    "device_power": "TV/ESP disconnected",
+    "notes": "Owner reported beep/no-beep, exact continuity threshold not recorded; HDMI passive cable connected to adaptor during 14-to-11/2 tests",
+    "measurements": [
+      {
+        "a": "adapter GRND",
+        "b": "adapter HDMI metal shell",
+        "beep": true
+      },
+      {
+        "a": "adapter GRND",
+        "b": "adapter terminal 11",
+        "beep": false
+      },
+      {
+        "a": "adapter GRND",
+        "b": "adapter terminal 17",
+        "beep": false
+      },
+      {
+        "a": "adapter terminal 11",
+        "b": "adapter terminal 17",
+        "beep": false
+      },
+      {
+        "a": "adapter terminal 14",
+        "b": "adapter terminal 11",
+        "beep": false
+      },
+      {
+        "a": "adapter terminal 14",
+        "b": "adapter terminal 2",
+        "beep": false
+      }
+    ]
+  },
+  "voltage_mode": {
+    "state": "TV powered, ESP32 not attached",
+    "mode": "DC volts",
+    "measurements": [
+      {
+        "red": "terminal 14",
+        "black": "terminal 11",
+        "voltage_v_approx": 3.3
+      },
+      {
+        "red": "terminal 14",
+        "black": "terminal 17",
+        "voltage_v_approx": 3.3
+      },
+      {
+        "red": "terminal 17",
+        "black": "terminal 11",
+        "voltage_v_range_approx": [
+          0,
+          0.1
+        ],
+        "note": "small fluctuations when moving probes/wires"
+      }
+    ]
+  },
+  "upstream_reference": {
+    "repository": "https://github.com/lukasa1993/tcl-tv-toolkit",
+    "test_platform": "Other TCL models, not this Realtek C655",
+    "baud": 115200,
+    "framing": "8N1",
+    "pins": [
+      {
+        "hdmi_pin": 14,
+        "proposed_tv_role": "UART TX",
+        "esp_gpio": 25,
+        "esp_role": "RX",
+        "verified_on_c655": false
+      },
+      {
+        "hdmi_pin": 2,
+        "proposed_tv_role": "UART RX",
+        "esp_gpio": 26,
+        "esp_role": "TX",
+        "verified_on_c655": false
+      },
+      {
+        "hdmi_pin": 11,
+        "proposed_tv_role": "GND",
+        "esp_role": "GND",
+        "verified_on_c655": false
+      }
+    ]
+  },
+  "limitations": [
+    "No actual UART decoding or boot logs",
+    "No measured connector-to-male HDMI pin mapping",
+    "No proven shared ground / common reference",
+    "No oscilloscope or logic analyzer data",
+    "No TV bootloader commands, root, TV firmware writes",
+    "No verified adapter/cable detailed pinout",
+    "No confirmed Windows COM port of ESP32"
+  ],
+  "docs": "docs/c655-hdmi-service-uart-bench-log.md"
+}
