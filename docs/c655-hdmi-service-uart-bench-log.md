@@ -1,6 +1,6 @@
 # TCL C655 HDMI Service UART — owner bench log (2026-11-21)
 
-**State: pre-connection electrical checks only. TV UART not yet observed. No ESP32 TX, U-Boot access, bootloader interrupt, root, TV firmware write or TV configuration change is claimed.**
+**State. ESP32 commissioned with all TV wiring detached. Electrical checks on the C655 remain preliminary, and TV UART output has yet to be captured.** [Verified ESP32 setup and passive capture](esp32-service-uart.md)
 
 This records physical observations reported by the device owner in the ongoing research session, rather than reconstructing hardware measurements from firmware. It is intended as a handoff for future work and for Codex. Unlike a wiring tutorial, **measured data**, **toolkit reference mapping**, and **unverified assumptions** are kept separate.
 
@@ -28,12 +28,12 @@ The service port is believed to be **HDMI 2 (SERVICE)** based on C655 documentat
 | TV | TCL C655 series; Realtek R75PT01 V461 per ADB baseline |
 | Service connector adapter | **Delock 65168**, HDMI-A **female** to **20 screw terminals** (HDMI contacts 1–19 plus a separate `GND`/`GRND` shell terminal) |
 | Cable | Passive copper HDMI male–male cable (owner explicitly confirmed **passive**, not optical/active); one end attached to the Delock during tests |
-| ESP | **ESP32-WROOM-32** development board with USB connection (planned UART bridge), powered independently via micro-USB |
+| ESP | **ESP32-WROOM-32** development board running the UART bridge, powered independently via micro-USB |
 | Jumper wires | Dupont leads used/planned to access the screw terminals with a meter |
 | Multimeter | **Lexman**, exact meter model not supplied; probes black `COM`, red `VΩ`; continuity/beeper and DC-volts ranges |
-| PC | Windows PowerShell; serial port enumeration showed **COM3 and COM4**, but which one is the ESP32 **remains unverified** |
+| PC | Windows PowerShell. ESP32 confirmed on **COM5** via Silicon Labs CP210x USB. COM3 and COM4 are Bluetooth. |
 | Optional peripherals | Separate USB-UART adapter/logic analyzer may be available from the broader hardware plan, **not confirmed used** in this measurement session |
-| Bridge firmware | Candidate: `lukasa1993/tcl-tv-toolkit` ESP32 Wi-Fi UART bridge (`esp32dev`); installation/build/USB upload and loopback **not yet confirmed by the owner** |
+| Bridge firmware | `lukasa1993/tcl-tv-toolkit` ESP32 Wi-Fi UART bridge (`esp32dev`). USB upload and internal loopback verified. |
 
 Do not assume the Delock adapter has a male HDMI connector; it does not. Neither the color of individual HDMI wires nor order of test-pad solder joints may be used as proof of connector pin assignment.
 
@@ -83,24 +83,11 @@ Owner attached the passive cable/Delock to the presumed C655 Service HDMI socket
 
 No scope traces, UART decoding, reference-to-chassis voltage, GPIO input current or independent cable continuity measurements were recorded. The **3.3 V reading is a useful candidate idle UART-high voltage**, *not* proof of UART or final authorization to connect an ESP32 GPIO. The difference between pins 11 and 17 is low in DC potential, but they had no measured continuity when unpowered.
 
-No connection was reported from TV to ESP32 during these measurements. No ESP firmware flash was reported.
+The ESP32 was detached during these measurements. The [structured readings](../evidence/c655-hdmi-service-electrical-2026-11-21.json) preserve the equipment state as reported during the electrical checks.
 
-## ESP32 / Windows bring-up: planned, NOT observed
+## ESP32 commissioning
 
-The owner reported two Windows serial port names (**COM3**, **COM4**) and asked which bridge firmware to install. The ESP was **not yet matched** to a particular COM port by a before/after unplug test. This is the current USB-identification blocker, not a failure of the ESP.
-
-Upstream code/reference: [tcl-tv-toolkit ESP32 bridge](https://github.com/lukasa1993/tcl-tv-toolkit/blob/main/esp32/README.md), `esp32dev`, PlatformIO, `esp32/setup_bridge.py`, `esp32/bridge.py`.
-
-Recommended host-only verification order:
-1. Identify which COM port disappears/reappears with **ESP USB** unplug/replug; do not select COM3/COM4 at random.
-2. Inspect the actual checked-out upstream README, `platformio.ini`, private Wi-Fi configuration handling and firmware build requirements. Confirm build target is `esp32dev`.
-3. Program **ESP only** (explicit owner confirmation), while **all HDMI/TV wires are detached**.
-4. Verify network bridge `status`, UART internal commissioning loopback, close commissioning and check `DISARMED` plus automation state. Never put credentials, bearer token or compiled credential-bearing firmware in the public repo.
-5. **Hold before electrical hookup** until cable-to-HDMI-contact continuity and a defensible common-ground reference are established. Strongly prefer passive logic-analyzer/scope verification of TV output signal, with correct voltage/rating.
-6. If safely verified, the *proposed* first live connection is **TV TX candidate pin 14 → ESP RX GPIO25** and **verified TV ground → ESP GND**, with **ESP GPIO26 TX not connected**; ESP powered via USB, no HDMI pin 18 power. Start RX capture before normal manual TV boot.
-7. Record raw UART bytes, time, baud, detected boot stage and errors. **Unreadable/no data ≠ absent UART.** Do not transmit, ARM, interrupt U-Boot or run bootloader commands at this stage.
-
-Existing read-only integrated collector: [collect_tv_research_bundle.py](../tools/collect_tv_research_bundle.py), [usage](combined-device-and-uart-collector.md). It can save an ESP-only passive UART trace after wiring is verified, but does not verify electrical connections automatically.
+COM5, the USB upload and authenticated access on port 8080 were verified while the ESP32 was detached from the TV. The bridge echoed the internal test marker, commissioning was closed, and an ESP32-only reboot confirmed it remained disarmed. The next step is to verify the common reference and waveform before any passive hookup. [Commissioning results and passive capture](esp32-service-uart.md) · [Combined collector guide](combined-device-and-uart-collector.md)
 
 ## Pending questions / explicit stop conditions
 
@@ -109,8 +96,6 @@ Existing read-only integrated collector: [collect_tv_research_bundle.py](../tool
 - [ ] Shared reference/return ground for this **Realtek R75** service UART demonstrated by a safe measurement; do not infer from 0 V between distinct isolated nodes.
 - [ ] TX signal on pin 14 confirmed as UART (prefer logic analyzer or oscilloscope) and levels safe for **3.3 V** ESP32 GPIO.
 - [ ] TV RX pin 2 voltage/role measured and checked separately *before any later bidirectional mode*.
-- [ ] Correct Windows COM port determined; USB/serial driver healthy.
-- [ ] Toolkit configured/built/uploaded **to ESP32 only**; loopback works and TX automation is disarmed.
 - [ ] First passive RX capture obtained and interpreted. No readable U-Boot prompt or TV boot log has been obtained so far.
 - [ ] Matching C655 `R75PT01` V461 stock/recovery documentation located **before considering any root, Magisk, AVB or flashing operation**.
 

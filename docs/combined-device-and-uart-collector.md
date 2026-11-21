@@ -16,7 +16,9 @@ The `--serial` option can be omitted if exactly one authorized online TV is atta
 
 ## C655-specific bench check (before any ESP32/TV wiring)
 
-The owner has already tested **Delock 65168 + passive HDMI cable** on the Realtek R75PT01 V461 C655. The candidate TV TX terminal 14 measured **~3.3 V** relative to both terminals 11 and 17, and 11↔17 measured **~0–0.1 V** in DC mode; crucially, **11↔17 had no unpowered continuity**, and neither connected by beep to the extra shell GRND terminal. The ESP has not been attached, identified among COM3/COM4, flashed or verified by loopback yet. Therefore **safe shared ground and UART pinout remain unverified**, despite encouraging DC readings. See [full owner bench log](c655-hdmi-service-uart-bench-log.md) and [JSON evidence](../evidence/c655-hdmi-service-electrical-2026-11-21.json). Do not use this wrapper as a reason to bypass that verification.
+The owner tested a **Delock 65168 and passive HDMI cable** on the Realtek R75PT01 V461 C655. Candidate TV TX terminal 14 measured about 3.3 V relative to terminals 11 and 17. The two candidate ground references measured about 0–0.1 V apart and showed no unpowered continuity to each other or to the breakout shell terminal. **The shared ground and TV UART pinout still need electrical verification.** [Owner bench log](c655-hdmi-service-uart-bench-log.md) · [Structured readings](../evidence/c655-hdmi-service-electrical-2026-11-21.json)
+
+The ESP32 was identified on COM5, flashed and commissioned with the TV detached. Authenticated access, internal loopback and persistent disarm were verified. The first C655 capture is pending. [ESP32 commissioning results and passive checklist](esp32-service-uart.md)
 
 ## ESP32 UART check (after commissioning and electrical verification)
 
