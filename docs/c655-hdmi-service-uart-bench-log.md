@@ -116,3 +116,71 @@ The USB–UART adapter can receive decoded bytes once a compatible signal and re
 ### Integrity and provenance
 
 Date: **2026-11-21**, owner-reported real-world electrical observations from the conversation. Unless noted as ADB evidence or cited upstream reference, these are **not independently reproduced laboratory measurements**. No raw meter photos, HDMI pinout photograph, ESP console log or scope traces are attached. This markdown intentionally contains no identifying serials, IP addresses, SSIDs, tokens, proprietary ROM dumps or private binaries.
+
+
+## Update: Saleae-compatible logic capture and successful full TV boot (2026-11-22)
+
+**Supersedes earlier statements above that no C655 UART output has been captured.** The owner supplied PulseView/sigrok recordings `test.sr`/`test.pvs` and `test2.sr`/`test2.pvs` in the research conversation. They are **not committed** to this public repository. The assistant produced local derived text `c655_uart_boot_decoded.txt` and `c655_uart_test2_decoded.txt`; the extracts below were checked against the local decoded text. Raw capture should be retained privately and re-decoded independently before making security or pinout conclusions.
+
+### Instruments and USB enumeration
+
+- A separate **8-channel 24 MHz Saleae Logic-compatible USB logic analyzer** was confirmed by the owner and configured in PulseView (distinct from the **CP210x USB–UART adapter on COM6**, which PulseView showed only as a demo device).
+- PulseView initially froze on Start Acquisition; a smaller USB-only test subsequently worked.
+- Analyzer inputs are physically numbered **1–8**; PulseView records them as **D0–D7**. First input was used for the capture. Do not assume a universal clone pinout without checking the actual hardware.
+- Capture metadata in `test2.sr` confirms **2 MHz sample rate**, **8 digital probes**, **80,793,280 samples** (~40.39664 s). All eight digital channels were recorded even though the first was the meaningful one.
+- Prior suggestions of 40 M samples / 20 s describe a *recommended configuration*, **not** the actual length of `test2.sr`.
+
+### Ground-reference / safety observations (owner-reported)
+
+The laptop was initially connected to its charger. With TV on, owner measured between analyzer GND and the Delock `GRND` shell terminal:
+- On DC 20 V range, unstable readings around 5 V then `OL` with charger attached.
+- With laptop charger removed, a small negative DC reading below 1 V was observed.
+- With laptop on battery, AC 200 V range initially showed **54.5 V AC** while other TV connections were still present.
+- After unplugging other TV HDMI/coax/Ethernet connections, leaving only power and the Service adapter, AC was **0.5 V** and DC was **0.6 V**.
+- These are high-impedance multimeter readings; they **do not prove safe shared ground, allowable ground current, or analyzer input-voltage tolerance**. The owner subsequently provided captures, but the exact final wiring, reference-ground selection, whether the connection was isolated, and peak waveform voltage were **not documented**. Do not retroactively label the wiring electrically validated.
+
+### Capture results and decoded boot sequence
+
+The supplied derived logs show **readable serial-like boot output compatible with UART 115200 8N1** on **PulseView D0**. The precise waveform timing and error rate have not been independently measured in this note. If D0 was attached to Delock HDMI terminal 14 as planned, this is strong practical evidence for a TV TX signal on that terminal, but **the actual wiring was not explicitly confirmed by the owner**.
+
+First recording `test.sr`: initial ROM/auxcode/kboot messages followed by `****Standby mode****`. Second recording `test2.sr`: ROM/auxcode/kboot, standby, IR wake event, then another ROM/auxcode/kboot sequence. Selected exact text from the supplied derived logs:
+
+```text
+Post romcode git ver:128eb2380694b93f (Apr  1 2024 22:52:16)
+Hello world, RTD2875p_CN2_TV030!
+****System Start****
+****RT2875P_GMC****
+Auxcode git ver:488467e316058bc4 (May 15 2025 11:15:40)
+flash_type = 2, secure_type = 2
+choose active index 0
+part name bootloader ative_slot _a real part name bootloader_a
+---RELEASE kboot 11:15:30 May 15 2025 ---
+get FW_TZFW ... ok!
+get FW_VKERNEL ... ok!
+get FW_VKERNEL2 ... ok!
+get FW_AKERNEL ... ok!
+****Standby mode****
+IR(0xab054f00)
+>Ir:0xab054f00
+Ir_match.
+wake
+non-STR, led off
+EMCU final!
+wake_source:0xab050003
+```
+
+The shortened `get FW_... ... ok!` lines above are **illustrative abridgments** of longer flash-offset and image-size lines in the decoded text, not verbatim lines. The derived text also contains `[INFO]RPMB auth key is ready`, `ATF` messages and repeated DRAM/device-tree selections. Avoid treating the serial log as proof that any privileged command interface exists.
+
+The assistant's earlier analysis estimated UART activity at approximately **3.22–11.58 s** in the second recording. This timing has **not been independently recomputed here** from transitions; treat it as provisional.
+
+**Owner explicitly confirmed the C655 fully reached its normal Android/Google TV interface after pressing power on the remote.** Lack of later kernel output on the observed channel is therefore not evidence of a failed boot. Kernel console could be disabled, redirected or filtered; U-Boot prompt, interactive input and Android console have **not** been demonstrated.
+
+### Next actions for Codex / handoff
+
+1. Preserve these observations, distinguish owner reports, actual capture metadata, derived text and hypotheses. Ask for or locally inspect `test.sr`, `test2.sr` and decoded logs if deeper timing analysis is needed; **do not fabricate raw evidence or commit private captures**.
+2. With normal Android booted and **authorized ADB** connected, collect **read-only** `adb shell cat /proc/cmdline` and `adb shell cat /proc/consoles`; capture any permission errors verbatim. Check `console=`, `earlycon=`, `loglevel`, `quiet`, and active consoles. This is the immediate next experiment; **results not yet supplied**.
+3. Optionally compare a longer passive capture spanning standby, remote wake and Android boot. Record the physical wiring, analyzer model/input ratings, electrical reference, capture parameters, and exact decoder settings before asserting a verified C655 pinout. Keep TX **physically disconnected**.
+4. If ADB shows no accessible kernel console, investigate stock Realtek R75PT01 boot image / DT / kernel cmdline **offline** using matching firmware; do not reuse MediaTek C9K methods.
+5. No UART writes, boot interruption, root attempt, U-Boot commands, AVB changes, firmware flashing or pin-2 hookup are authorized. The ESP32 bridge remains a separate commissioned but not yet TV-validated path; do not infer that its RX connection was tested by the Saleae capture.
+
+**Current status:** boot UART *output observed and decoded* on analyzer D0; normal Android boot confirmed; Android kernel console and safe shared ground still unverified.
