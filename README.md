@@ -31,6 +31,7 @@ Plan and verified details: **[docs/roadmap.md](docs/roadmap.md)**.
 | Evidence hashes | [evidence/README](evidence/README.md) |
 | Second TV handoff | [second-tv-handoff](docs/second-tv-handoff.md) |
 | C655 actual Realtek baseline | [c655-realtek-baseline](docs/c655-realtek-baseline.md) |
+| C655 HDMI Service UART bench measurements | [C655 HDMI Service bench log](docs/c655-hdmi-service-uart-bench-log.md), [structured readings](evidence/c655-hdmi-service-electrical-2026-11-21.json) |
 
 ## Quick start (Windows)
 
