@@ -14,6 +14,10 @@ python .\tools\collect_tv_research_bundle.py --label C655-stock --serial "ACTUAL
 
 The `--serial` option can be omitted if exactly one authorized online TV is attached. This runs the full general audio collector (identity, security/slots, kernel config if readable, DT sysfs, driver binding, audio policy/ALSA, services, filtered existing audio logcat and permitted vendor binaries). Optional `--reports-only` disables binary pulls, and `--include-packages` adds package names/paths. No `adb root` or denied privileged probes are retried with escalation. The nested ADB ZIP is kept as `adb_audit.zip` inside the outer bundle, together with log files and a status manifest.
 
+## C655-specific bench check (before any ESP32/TV wiring)
+
+The owner has already tested **Delock 65168 + passive HDMI cable** on the Realtek R75PT01 V461 C655. The candidate TV TX terminal 14 measured **~3.3 V** relative to both terminals 11 and 17, and 11↔17 measured **~0–0.1 V** in DC mode; crucially, **11↔17 had no unpowered continuity**, and neither connected by beep to the extra shell GRND terminal. The ESP has not been attached, identified among COM3/COM4, flashed or verified by loopback yet. Therefore **safe shared ground and UART pinout remain unverified**, despite encouraging DC readings. See [full owner bench log](c655-hdmi-service-uart-bench-log.md) and [JSON evidence](../evidence/c655-hdmi-service-electrical-2026-11-21.json). Do not use this wrapper as a reason to bypass that verification.
+
 ## ESP32 UART check (after commissioning and electrical verification)
 
 The public toolkit checkout should be at `..\tcl-tv-toolkit` (or pass `--esp-toolkit PATH`). Provision / flash its bridge according to its own `esp32/README.md` **while TV UART wires are detached**. Verify voltage compatibility, the service-port pinout, continuity and common ground; initially connect only TV TX to ESP RX and GND. Power ESP independently. The script does not perform this electrical safety check for you.
