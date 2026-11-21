@@ -48,6 +48,12 @@ The collector located `/vendor/lib/hw/audio.primary.rtd6748.so` and `audio.prima
 
 No actual TrueHD or EAC3 playback attempt is demonstrated in the provided bundle: filtered logcat mostly service/CEC, capture diagnostics and SELinux denials. There is no empirical playback pass/fail for C655, unlike the detailed C9K positive/negative controls. No UART data, boot interrupt or root proof. The C9K MatMlpOnly feature string/path is not imported across these platforms.
 
+## Hardware follow-up: HDMI Service bench checks — 2026-11-21
+
+Separate from the ADB ZIP above, the owner subsequently reported measurements on a **Delock 65168** breakout and passive HDMI cable. Pins **14→11 and 14→17 each measured approximately +3.3 V** with the TV on, while **17→11 measured approximately 0–0.1 V**. However, in unpowered continuity testing pins 11 and 17 did **not** beep together, and neither beeped to the separate shell **GRND** terminal; GRND did beep to the HDMI metal shell. Therefore these measurements are **not proof of a verified shared UART ground, readable UART, successful ESP pairing, or bootloader access**. The owner's Windows PC showed COM3 and COM4, but the ESP port has not been identified and no firmware flash/log capture has been confirmed.
+
+See the complete [hardware/voltage/continuity log](c655-hdmi-service-uart-bench-log.md) and [structured evidence](../evidence/c655-hdmi-service-electrical-2026-11-21.json). No device modification was performed in this electrical session.
+
 ## Next experiments (read-only)
 
 1. Physically verify the retail model size, HDMI Service label, connector pin numbering and UART electrical levels before coupling ESP32. Use **passive receive first**, capturing with `tools/collect_tv_research_bundle.py --label C655-uart --skip-adb --esp-toolkit ..\\tcl-tv-toolkit --esp-host ESP_IP --uart-seconds 90`. Do not send the MT5896 bootloader commands/flash profile.
