@@ -32,7 +32,7 @@ The service port is believed to be **HDMI 2 (SERVICE)** based on C655 documentat
 | Jumper wires | Dupont leads used/planned to access the screw terminals with a meter |
 | Multimeter | **Lexman**, exact meter model not supplied; probes black `COM`, red `VΩ`; continuity/beeper and DC-volts ranges |
 | PC | Windows PowerShell. ESP32 confirmed on **COM5** via Silicon Labs CP210x USB. COM3 and COM4 are Bluetooth. |
-| Optional peripherals | Separate USB-UART adapter/logic analyzer may be available from the broader hardware plan, **not confirmed used** in this measurement session |
+| Optional peripherals | Separate Silicon Labs CP210x USB–UART adapter on **COM6**. An 8-channel logic analyzer has yet to be identified. |
 | Bridge firmware | `lukasa1993/tcl-tv-toolkit` ESP32 Wi-Fi UART bridge (`esp32dev`). USB upload and internal loopback verified. |
 
 Do not assume the Delock adapter has a male HDMI connector; it does not. Neither the color of individual HDMI wires nor order of test-pad solder joints may be used as proof of connector pin assignment.
@@ -88,6 +88,12 @@ The ESP32 was detached during these measurements. The [structured readings](../e
 ## ESP32 commissioning
 
 COM5, the USB upload and authenticated access on port 8080 were verified while the ESP32 was detached from the TV. The bridge echoed the internal test marker, commissioning was closed, and an ESP32-only reboot confirmed it remained disarmed. The next step is to verify the common reference and waveform before any passive hookup. [Commissioning results and passive capture](esp32-service-uart.md) · [Combined collector guide](combined-device-and-uart-collector.md)
+
+## USB-only check for PulseView
+
+Unplugging the second device removed **COM6** and left the ESP32 on **COM5**. Windows identified COM6 as a Silicon Labs CP210x USB–UART bridge (`10C4:EA60`). The owner reported pin labels `DCD`, `DSR`, `RTS`, `CTS` and `RST`. The first four are serial control lines. PulseView 0.4.2 x64 showed only `Demo device`. The Windows driver stayed in place and the test used USB only. [Silicon Labs CP210x driver reference](https://www.silabs.com/software-and-tools/usb-to-uart-bridge-vcp-drivers)
+
+The USB–UART adapter can receive decoded bytes once a compatible signal and reference ground are established. To inspect digital transitions and bit timing on the candidate C655 UART pin in PulseView, use a supported USB logic analyzer, for example an 8-channel 24 MHz FX2 model with inputs marked `CH0–CH7` or `D0–D7` and sigrok `fx2lafw` support. Confirm the exact model, input-voltage limits and ground reference before connecting probes to the TV. [sigrok FX2 device list](https://sigrok.org/wiki/Fx2lafw)
 
 ## Pending questions / explicit stop conditions
 
