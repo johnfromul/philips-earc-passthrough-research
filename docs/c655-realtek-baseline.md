@@ -50,9 +50,9 @@ No actual TrueHD or EAC3 playback attempt is demonstrated in the provided bundle
 
 ## Hardware follow-up: HDMI Service bench checks — 2026-11-21
 
-Separate from the ADB ZIP above, the owner subsequently reported measurements on a **Delock 65168** breakout and passive HDMI cable. Pins **14→11 and 14→17 each measured approximately +3.3 V** with the TV on, while **17→11 measured approximately 0–0.1 V**. However, in unpowered continuity testing pins 11 and 17 did **not** beep together, and neither beeped to the separate shell **GRND** terminal; GRND did beep to the HDMI metal shell. Therefore these measurements are **not proof of a verified shared UART ground, readable UART, successful ESP pairing, or bootloader access**. The owner's Windows PC showed COM3 and COM4, but the ESP port has not been identified and no firmware flash/log capture has been confirmed.
+Separate from the ADB ZIP above, the owner reported measurements on a **Delock 65168** breakout and passive HDMI cable. Pins **14→11 and 14→17 each measured approximately +3.3 V** with the TV on, while **17→11 measured approximately 0–0.1 V**. In unpowered continuity testing pins 11 and 17 showed no continuity to each other or to the separate shell **GRND** terminal. GRND had continuity to the HDMI shell. These measurements leave the shared UART ground unverified.
 
-See the complete [hardware/voltage/continuity log](c655-hdmi-service-uart-bench-log.md) and [structured evidence](../evidence/c655-hdmi-service-electrical-2026-11-21.json). No device modification was performed in this electrical session.
+The initial readings are preserved in the structured evidence. The follow-up bench log records ESP32 commissioning and separate logic-analyzer captures from Delock terminal 14 with terminal 11 as reference. [Current bench log](c655-hdmi-service-uart-bench-log.md) · [Original structured readings](../evidence/c655-hdmi-service-electrical-2026-11-21.json)
 
 ## Next experiments (read-only)
 

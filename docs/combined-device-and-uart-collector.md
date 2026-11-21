@@ -18,7 +18,7 @@ The `--serial` option can be omitted if exactly one authorized online TV is atta
 
 The owner tested a **Delock 65168 and passive HDMI cable** on the Realtek R75PT01 V461 C655. Candidate TV TX terminal 14 measured about 3.3 V relative to terminals 11 and 17. The two candidate ground references measured about 0–0.1 V apart and showed no unpowered continuity to each other or to the breakout shell terminal. **The shared ground and TV UART pinout still need electrical verification.** [Owner bench log](c655-hdmi-service-uart-bench-log.md) · [Structured readings](../evidence/c655-hdmi-service-electrical-2026-11-21.json)
 
-The ESP32 was identified on COM5, flashed and commissioned with the TV detached. Authenticated access, internal loopback and persistent disarm were verified. The first C655 capture is pending. [ESP32 commissioning results and passive checklist](esp32-service-uart.md)
+The ESP32 was identified on COM5, flashed and commissioned with the TV detached. Authenticated access, internal loopback and persistent disarm were verified. C655 boot and wake output were captured separately with a logic analyzer. The collector's first C655 capture through the ESP32 is pending. [ESP32 commissioning and passive checklist](esp32-service-uart.md) · [Logic-analyzer results](c655-hdmi-service-uart-bench-log.md)
 
 ## ESP32 UART check (after commissioning and electrical verification)
 

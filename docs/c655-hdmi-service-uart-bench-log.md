@@ -1,6 +1,6 @@
 # TCL C655 HDMI Service UART — owner bench log (2026-11-21)
 
-**State. ESP32 commissioned with all TV wiring detached. Electrical checks on the C655 remain preliminary, and TV UART output has yet to be captured.** [Verified ESP32 setup and passive capture](esp32-service-uart.md)
+**State. The logic analyzer captured boot UART output with D0 on Delock terminal 14 and analyzer GND on terminal 11. Electrical validation of that connection is pending.** The ESP32 was commissioned separately with all TV wiring detached. [Verified ESP32 setup and passive capture](esp32-service-uart.md)
 
 This records physical observations reported by the device owner in the ongoing research session, rather than reconstructing hardware measurements from firmware. It is intended as a handoff for future work and for Codex. Unlike a wiring tutorial, **measured data**, **toolkit reference mapping**, and **unverified assumptions** are kept separate.
 
@@ -43,7 +43,7 @@ The [upstream TCL TV Toolkit rooting notes](https://github.com/lukasa1993/tcl-tv
 
 | Nominal HDMI contact / Delock terminal | Upstream *service-mode* interpretation | Planned ESP32 connection | Current status |
 |---|---|---|---|
-| **14** | TV UART **TX** | ESP32 UART2 **RX = GPIO25** | DC voltage observed; UART signal **not decoded** |
+| **14** | TV UART **TX** | ESP32 UART2 **RX = GPIO25** | Boot UART decoded at **115200 8N1** in `test2.sr`, with analyzer D0 on terminal 14 and GND on terminal 11 |
 | **2** | TV UART **RX** | ESP32 UART2 **TX = GPIO26** | No voltage / TV-RX function verified; **do not connect for passive capture** |
 | **11** | UART **GND** in upstream example | ESP32 **GND** | Appears near 0 V to pin 17, but isolated in continuity tests; **ground/reference not proven** |
 | **17** | Standard HDMI DDC/CEC ground | None proposed | Distinct from terminal 11 and shell in unpowered continuity measurements |
@@ -100,9 +100,9 @@ The USB–UART adapter can receive decoded bytes once a compatible signal and re
 - [ ] Exact retail chassis label and physical HDMI **SERVICE** marking photographed/recorded.
 - [ ] Delock terminal ↔ actual HDMI male cable contact mapping verified using a safe mating breakout or HDMI cable tester (no thick meter tips forced into connector).
 - [ ] Shared reference/return ground for this **Realtek R75** service UART demonstrated by a safe measurement; do not infer from 0 V between distinct isolated nodes.
-- [ ] TX signal on pin 14 confirmed as UART (prefer logic analyzer or oscilloscope) and levels safe for **3.3 V** ESP32 GPIO.
+- [ ] Measure the waveform peaks at the observed pin 14 TX connection and verify the analyzer and ESP32 input-voltage limits.
 - [ ] TV RX pin 2 voltage/role measured and checked separately *before any later bidirectional mode*.
-- [ ] First passive RX capture obtained and interpreted. No readable U-Boot prompt or TV boot log has been obtained so far.
+- [x] First passive RX capture obtained and boot output decoded. An interactive prompt remains unverified.
 - [ ] Matching C655 `R75PT01` V461 stock/recovery documentation located **before considering any root, Magisk, AVB or flashing operation**.
 
 **No TV write path is authorized by this log.** In particular do not apply the MediaTek `boot_a` command sequence, C9K patch profile or upstream 55C6K boot image to this Realtek C655. Do not send even benign diagnostic commands until the physical UART path is validated.
@@ -125,9 +125,10 @@ Date: **2026-11-21**, owner-reported real-world electrical observations from the
 ### Instruments and USB enumeration
 
 - A separate **8-channel 24 MHz Saleae Logic-compatible USB logic analyzer** was confirmed by the owner and configured in PulseView (distinct from the **CP210x USB–UART adapter on COM6**, which PulseView showed only as a demo device).
+- The analyzer enumerated as USB VID/PID `0925:3881`. Installing WinUSB cleared Windows Code 28. PulseView 0.4.2 identified it as **Saleae Logic** via `fx2lafw` and completed a five-second USB-only capture at 2 MHz before any TV probes were connected.
 - PulseView initially froze on Start Acquisition; a smaller USB-only test subsequently worked.
 - Analyzer inputs are physically numbered **1–8**; PulseView records them as **D0–D7**. First input was used for the capture. Do not assume a universal clone pinout without checking the actual hardware.
-- Capture metadata in `test2.sr` confirms **2 MHz sample rate**, **8 digital probes**, **80,793,280 samples** (~40.39664 s). All eight digital channels were recorded even though the first was the meaningful one.
+- Capture metadata in `test2.sr` gives a **2 MHz sample rate**, **8 digital probes** and **one byte per sample**. The raw logic chunks total **80,793,600 samples** (40.3968 s). D0 carried the boot output.
 - Prior suggestions of 40 M samples / 20 s describe a *recommended configuration*, **not** the actual length of `test2.sr`.
 
 ### Ground-reference / safety observations (owner-reported)
@@ -137,11 +138,11 @@ The laptop was initially connected to its charger. With TV on, owner measured be
 - With laptop charger removed, a small negative DC reading below 1 V was observed.
 - With laptop on battery, AC 200 V range initially showed **54.5 V AC** while other TV connections were still present.
 - After unplugging other TV HDMI/coax/Ethernet connections, leaving only power and the Service adapter, AC was **0.5 V** and DC was **0.6 V**.
-- These are high-impedance multimeter readings; they **do not prove safe shared ground, allowable ground current, or analyzer input-voltage tolerance**. The owner subsequently provided captures, but the exact final wiring, reference-ground selection, whether the connection was isolated, and peak waveform voltage were **not documented**. Do not retroactively label the wiring electrically validated.
+- These high-impedance multimeter readings leave safe shared ground, allowable ground current and analyzer input-voltage tolerance unverified. The owner confirmed the analyzer connections for `test2.sr`. Isolation and peak waveform voltage remain undocumented.
 
 ### Capture results and decoded boot sequence
 
-The supplied derived logs show **readable serial-like boot output compatible with UART 115200 8N1** on **PulseView D0**. The precise waveform timing and error rate have not been independently measured in this note. If D0 was attached to Delock HDMI terminal 14 as planned, this is strong practical evidence for a TV TX signal on that terminal, but **the actual wiring was not explicitly confirmed by the owner**.
+For `test2.sr`, the owner confirmed **analyzer D0 to Delock terminal 14** and **analyzer GND to Delock terminal 11**. Independent decoding of the raw D0 samples at **115200 8N1** recovered the boot messages, standby and the wake sequence. This establishes boot UART output at breakout terminal 14 for the recorded setup. The electrical suitability of terminal 11 as a shared ground and the mapping to a Linux tty remain open.
 
 First recording `test.sr`: initial ROM/auxcode/kboot messages followed by `****Standby mode****`. Second recording `test2.sr`: ROM/auxcode/kboot, standby, IR wake event, then another ROM/auxcode/kboot sequence. Selected exact text from the supplied derived logs:
 
@@ -171,16 +172,39 @@ wake_source:0xab050003
 
 The shortened `get FW_... ... ok!` lines above are **illustrative abridgments** of longer flash-offset and image-size lines in the decoded text, not verbatim lines. The derived text also contains `[INFO]RPMB auth key is ready`, `ATF` messages and repeated DRAM/device-tree selections. Avoid treating the serial log as proof that any privileged command interface exists.
 
-The assistant's earlier analysis estimated UART activity at approximately **3.22–11.58 s** in the second recording. This timing has **not been independently recomputed here** from transitions; treat it as provisional.
+Independent decoding directly from `test2.sr` placed the first and last decoded bytes at **3.220321 s** and **11.583718 s**. The `Standby mode` message began at **8.183063 s**, and the first decoded IR wake event at **9.963453 s**.
 
 **Owner explicitly confirmed the C655 fully reached its normal Android/Google TV interface after pressing power on the remote.** Lack of later kernel output on the observed channel is therefore not evidence of a failed boot. Kernel console could be disabled, redirected or filtered; U-Boot prompt, interactive input and Android console have **not** been demonstrated.
 
 ### Next actions for Codex / handoff
 
-1. Preserve these observations, distinguish owner reports, actual capture metadata, derived text and hypotheses. Ask for or locally inspect `test.sr`, `test2.sr` and decoded logs if deeper timing analysis is needed; **do not fabricate raw evidence or commit private captures**.
-2. With normal Android booted and **authorized ADB** connected, collect **read-only** `adb shell cat /proc/cmdline` and `adb shell cat /proc/consoles`; capture any permission errors verbatim. Check `console=`, `earlycon=`, `loglevel`, `quiet`, and active consoles. This is the immediate next experiment; **results not yet supplied**.
-3. Optionally compare a longer passive capture spanning standby, remote wake and Android boot. Record the physical wiring, analyzer model/input ratings, electrical reference, capture parameters, and exact decoder settings before asserting a verified C655 pinout. Keep TX **physically disconnected**.
+1. Retain the original `test.sr` and `test2.sr` recordings privately alongside the capture settings.
+2. Read-only ADB on the running C655 returned `Permission denied` for both `/proc/cmdline` and `/proc/consoles`. The Android property `ro.boot.console` returned `ttyS1`. The active kernel consoles and their wiring remain unknown.
+3. Confirm peak signal levels, analyzer input ratings and a safe reference before comparing a longer passive capture spanning standby, remote wake and Android boot. Keep TV RX and ESP32 TX disconnected.
 4. If ADB shows no accessible kernel console, investigate stock Realtek R75PT01 boot image / DT / kernel cmdline **offline** using matching firmware; do not reuse MediaTek C9K methods.
 5. No UART writes, boot interruption, root attempt, U-Boot commands, AVB changes, firmware flashing or pin-2 hookup are authorized. The ESP32 bridge remains a separate commissioned but not yet TV-validated path; do not infer that its RX connection was tested by the Saleae capture.
 
-**Current status:** boot UART *output observed and decoded* on analyzer D0; normal Android boot confirmed; Android kernel console and safe shared ground still unverified.
+**Current status.** Boot UART output was decoded with D0 on terminal 14 and analyzer GND on terminal 11. Normal Android boot was confirmed. The active Linux console and safe shared ground still need verification.
+
+### Extended passive capture through Android startup (2026-11-22)
+
+The owner confirmed the setup was suitable for repeating the passive test. PulseView recorded **67.6864 s** at **2 MHz** with UART RX on D0. The owner woke the TV with the remote and confirmed the Android interface appeared while recording. The exact screen-appearance timestamp was not logged.
+
+Independent decoding at **115200 8N1** recovered **7,026 bytes**. Standby output began at **6.779 s**, the IR wake event at **11.418 s**, and the second `kboot` banner at **12.114 s**. The last D0 transition was at **13.035 s**, followed by **54.651 s** with no D0 transitions before the capture stopped. The decoded output contained no `Linux version`, `earlycon:`, `printk:` or `init:` markers. This trace establishes a silent tail on the observed service channel while Android reached its UI. The routing and active state of the kernel console remain open.
+
+The original recording, PulseView setup and timestamped decode are retained privately. The `.sr` archive SHA-256 is `7315c413335eddda84354eb39c540f6cb26de1cb91f92f98a825967592e9a69d`.
+
+A follow-up read-only ADB check resolved `/sys/class/tty/ttyS1/device` to `../../../1801b100.serial`. This matches the controller address in the stock `vendor_boot` device tree's `stdout-path` (`/serial@1801B100`). Reading `/sys/class/tty/console/active` returned `Permission denied`. The controller mapping is established for the running C655. Its active Linux console state and connection to HDMI terminal 14 remain unverified.
+
+### Offline comparison with the R75PT01 V461 OTA
+
+The analyzed BLOCK OTA has SHA-256 `c7d3d8866c49a6084ceb4d710d28f1382f299b23a4c59b3933777cd3cc3bce5d`. Its metadata names software version `V8-R75PT01-LF1V461` and target fingerprint `G10_4K_US_NF/AS50`. The updater's product list includes the TV's `G10_4K_GB`. The installed fingerprint was recorded as `G10_4K_GB/AS12`. Vendor signature and byte-for-byte identity of the installed images remain unverified.
+
+| Evidence | Console configuration |
+|---|---|
+| `boot.img` | Android v4 header cmdline is empty. Embedded kernel config contains `CONFIG_CMDLINE="console=ttyS0,115200 earlyprintk"` and `CONFIG_CMDLINE_FROM_BOOTLOADER=y`. Forcing the built-in cmdline is disabled. |
+| `vendor_boot.img` | Base `rtk,rtd6748` DT has `earlycon` in `/chosen/bootargs` and `stdout-path=/serial@1801B100`. |
+| `dtbo.img` | Its single archived FDT names `rtk,rtd299s` and includes `androidboot.console=ttyS0 console=ttyS0,115200`. Runtime selection or application on this C655 has not been established. |
+| Live C655 | `ro.boot.console=ttyS1`, with `ttyS1` linked to `1801b100.serial`. Shell access to the effective cmdline and active console lists was denied. |
+
+These observations identify the Linux controller used by `ttyS1` and the service terminal carrying the observed bootloader output. The physical link between the controller and that HDMI terminal remains unverified.

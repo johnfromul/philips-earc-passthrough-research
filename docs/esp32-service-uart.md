@@ -1,6 +1,6 @@
 # ESP32 service UART preflight
 
-On 2026-11-21, the Windows build, USB upload, Wi-Fi access and internal UART loopback passed with the ESP32 physically detached from both TVs. The next test is a passive capture on the TCL C655. The C655 and C9K service-port pinouts and UART output remain unverified.
+On 2026-11-21, the Windows build, USB upload, Wi-Fi access and internal UART loopback passed with the ESP32 physically detached from both TVs. A separate logic analyzer later captured C655 boot UART output with D0 on Delock terminal 14 and its reference on terminal 11. The ESP32-to-TV path remains untested. [C655 bench results](c655-hdmi-service-uart-bench-log.md)
 
 ## Verified bridge setup
 
