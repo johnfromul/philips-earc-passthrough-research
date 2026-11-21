@@ -6,7 +6,7 @@ Handoff for continuing on another PC / new Claude Code session. Goal: test wheth
 
 The second TV has now been identified from an ADB evidence bundle as **Realtek RTD2875P / rtd6748, G10 board, R75PT01 V461, Android 12, kernel 5.4.274+, slot _a, AVB locked/green, SELinux enforcing**. It is **not** MT5896. Current policy exposes E-AC3 JOC/AC4 but not TrueHD/MAT/IEC61937; runtime eARC service reports support but no active link in the captured state. Primary HAL `audio.primary.rtd6748.so` was not pullable without additional access. No playback comparison or UART capture was in the archive.
 
-See [C655 Realtek baseline](c655-realtek-baseline.md) for evidence hashes and next steps. Remaining parts of this document are **the earlier pre-capture plan**, retained for context; C9K patch hashes and the MatMlpOnly idea must not be applied to C655 without Realtek-specific proof.
+See [C655 Realtek baseline](c655-realtek-baseline.md) for evidence hashes and next steps. **Hardware follow-up (2026-11-21):** owner measured Delock 65168 service-breakout contacts and 3.3 V candidate UART idle levels, but has not connected ESP32 or captured serial output. Exact continuity / voltage readings, device equipment, pin-map status, and electrical stop conditions are in [C655 HDMI Service UART bench log](c655-hdmi-service-uart-bench-log.md) and [structured readings](../evidence/c655-hdmi-service-electrical-2026-11-21.json). Do not infer a verified common GND from a 0 V reading between isolated terminal 11 and terminal 17. Remaining parts of this document are **the earlier pre-capture plan**, retained for context; C9K patch hashes and the MatMlpOnly idea must not be applied to C655 without Realtek-specific proof.
 
 ## Hypothesis under test (from C9K, V670 GB AU04)
 
