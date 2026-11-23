@@ -165,3 +165,20 @@ verified boot (it's disabled) but the **opaque closed DSP firmware** with no exp
 **A clean patch is not practically achievable on this firmware.** The working internal-Atmos route remains
 **E-AC3 / DD+ JOC** (`isAtmos=1`). No device modifications were persisted this session (Frida/kprobes are volatile and
 removed; partition backups taken as a precaution were never needed).
+
+## 9. DSP firmware is TEE/Secure-Engine authenticated — modified firmware won't load
+
+Checked whether a modified audio-DSP firmware would even load (the last practical gate), via static analysis of the
+pulled kernel modules:
+- `mtk-tvsnd-dsp-loader.ko` (12 KB shim) just sets up DSP memory (`MApi_AUDIO_offload_SetDspBaseAddr`,
+  `WritePreInitTable`); no verification itself.
+- `mtk-tvsnd-soc.ko` loads the firmware with `request_firmware_direct` and hands it through the **TEE**:
+  `ST_AUDIO_TEE_FIRMWARE_INFO`, `ST_AUDIO_TEE_MIXED_FIRMWARE_INFO`, plus **Secure Engine** paths (`DSP_SE`,
+  `se_test_output_checksum`). The firmware is **LZMA-compressed** (`E_SYS_QUERY_LZMA_SELECT_SUPPORTED`), explaining the
+  opaque `dsp.bin`. (The `AUDIO_DOLBY_*_Cert` strings are Dolby/DTS **licensing** certs, not firmware signatures.)
+
+**Conclusion:** the audio-DSP firmware is authenticated in the **TEE/Secure Engine**, which is **independent of AVB**.
+So even with the bootloader unlocked and verity disabled, a modified `dsp.bin`/`armfw` would fail secure-world
+authentication and not run. This **definitively closes** the DSP-firmware-patch avenue: the limitation is not reachable
+at any layer — userspace/kernel levers are inert/absent (proven), there is no config/param lever (proven), and the DSP
+firmware is TEE-gated. **No practical path to internal-app TrueHD Atmos exists on V670.** Working route stays E-AC3/DD+ JOC.
