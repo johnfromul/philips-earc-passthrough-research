@@ -2,12 +2,17 @@
 
 Dolby TrueHD Atmos from internal Android TV apps on a TCL 65C9K (Google TV 14, MediaTek mt5896, firmware V670 GB AU04) to a TCL Q85H Pro soundbar over eARC. Plus an optional reversible debloat track.
 
-## Status (2026-11-19, re-verified live over ADB)
+## Audio baseline (2026-11-19, re-verified live over ADB)
 
 - **Works:** E-AC3 Atmos from apps; TrueHD Atmos from an external HDMI source.
 - **Does not work:** TrueHD from apps plays clean but as Dolby Surround (`isAtmos=0`). IEC61937 is blocked by a TCL client process check and two HAL format gates. MAT payloads from apps are not recognized. TCL Media Center drops MKV TrueHD tracks (`vendor.mtk.mkv.support.truehd` unset, not settable from shell).
 - **Leading hypothesis:** the pipeline sets `MatMlpOnly=1` only for the internal (MM) source, which would strip Atmos. Testing it needs root.
-- Bootloader locked, verified boot green, SELinux enforcing. No device modifications so far apart from user-0 package disables.
+
+## Current device state (2026-11-23)
+
+- AVB device state was unlocked and dm-verity disabled through the live U-Boot console. Magisk v31.1 patched image was written to active `boot_b`.
+- The TV booted into Android and is waiting at initial setup after the unlock reset. Root and runtime SELinux state have not yet been verified; the SELinux-permissive boot setting was not used.
+- Finish setup, reconnect Wi-Fi, and re-enable Wireless debugging before ADB verification. Full command/output record: [C9K UART root attempt](docs/c9k-v670-uart-root-attempt-2026-11-23.md).
 
 Plan and verified details: **[docs/roadmap.md](docs/roadmap.md)**.
 
@@ -29,9 +34,10 @@ Plan and verified details: **[docs/roadmap.md](docs/roadmap.md)**.
 | Build, deploy, test | [reproduction](docs/reproduction.md) |
 | OEM report draft | [upstream-report](docs/upstream-report.md) |
 | Evidence hashes | [evidence/README](evidence/README.md) |
-| Second TV handoff | [second-tv-handoff](docs/second-tv-handoff.md) |
+| Second TV handoff | [second-tv-handoff](docs/second-tv-handoff.md), [inspection results](docs/second-tv-results.md) |
 | C655 actual Realtek baseline | [c655-realtek-baseline](docs/c655-realtek-baseline.md) |
 | C655 HDMI Service UART | [Electrical bench measurements](docs/c655-hdmi-service-uart-bench-log.md), [structured readings](evidence/c655-hdmi-service-electrical-2026-11-21.json), [verified ESP32 setup and passive capture](docs/esp32-service-uart.md) |
+| C9K UART and Magisk attempt | [Root attempt log](docs/c9k-v670-uart-root-attempt-2026-11-23.md), [UART hardware findings](docs/c9k-hdmi-service-uart.md) |
 
 ## Quick start (Windows)
 

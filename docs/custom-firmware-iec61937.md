@@ -4,7 +4,7 @@ Status: preparation only, no flashable image. Owner requested custom firmware af
 
 ## Observed boot constraints
 
-Previous private firmware_inventory.zip properties.txt shows bootloader 01.01.261024, ro.boot.vbmeta.device_state=locked, verifiedbootstate=green, veritymode=enforcing, ro.boot.dynamic_partitions=true, ro.build.ab_update=true and slot _b at that capture. Current state must be rechecked. A modified stock image cannot simply be installed as a signed OTA on a locked bootloader. Do not assume that a supported unlock path exists or that A/B guarantees recovery.
+The previous private firmware_inventory.zip properties.txt captured bootloader 01.01.261024, `ro.boot.vbmeta.device_state=locked`, `verifiedbootstate=green`, `veritymode=enforcing`, dynamic partitions, Virtual A/B, and slot `_b`. Those are pre-unlock values. On 2026-11-23 a separate UART/Magisk procedure unlocked AVB, disabled dm-verity, and wrote the patched image to `boot_b`; Android reached initial setup, but root is not yet verified. See the [current device state](roadmap.md#current-device-state-2026-11-23-uartmagisk-session) and [UART attempt log](c9k-v670-uart-root-attempt-2026-11-23.md). This did not produce a custom IEC61937 firmware image or validate an audio modification.
 
 Use scripts/firmware_preflight.ps1 with the exact current stock package if available. It reads only targeted properties, partition names/mounts, bootctl query results, audio paths/hashes and optional ZIP metadata. It does not retrieve device secrets, flash, reboot or modify settings. Keep firmware packages and outputs private.
 
@@ -13,7 +13,7 @@ References:
 - AVB: https://android.googlesource.com/platform/external/avb/
 - Community precedent on different models/builds (not proof of compatibility): https://github.com/lukasa1993/tcl-tv-toolkit
 
-Before any device change: obtain exact V670 stock package and independently confirm matching recovery image and supported recovery procedure for this physical model/region, available USB media, build metadata, partition layout and bootloader state. Confirm operator accepts possible data wipe, warranty/DRM changes, boot failure. Do not flash an arbitrary C6K/P8K image, downgrade casually or change bootloader/TEE/calibration/DRM partitions.
+Before any further device change: preserve the exact V670 stock boot image and review the recovery procedure for this physical model/region. The Magisk boot and stock recovery boot are both retained and hash-verified; the USB partial-upgrade command was confirmed in live U-Boot help, but a stock reflash has not been exercised. Do not flash an arbitrary C6K/P8K image, downgrade casually or change bootloader/TEE/calibration/DRM partitions.
 
 ## Three audio gates
 
@@ -32,7 +32,7 @@ Reproduce the last observation with:
 - F3 open-only probe: real third-party API sees IEC61937 profile and can open appropriate direct track; prove route actually eARC. Then low-volume short burst test with correct validated carrier, stop on noise. Compare audio frame progression, decoder/output logs and soundbar. Normal audio plus Atmos is required, not track creation alone.
 - F4 Moonfin MKV integration and regression checks: AC3/EAC3 JOC, PCM, DTS if supported, speaker/ARC, HDMI Atmos, CEC, HDR, TV startup and standby. Restore stock on failure.
 
-No firmware image or root method has been validated on this exact unit. Next step is F0; continue static HAL work offline in parallel when stock package metadata is available.
+No custom IEC61937 firmware image has been built or validated on this exact unit. The separate Magisk UART route has reached Android initial setup; root and a successful audio modification remain unverified. F0 firmware inventory was completed in the 2026-11-19 snapshot; the current boot state and next ADB gate are documented in the roadmap.
 
 ## F0 preflight result (2026-11-19)
 

@@ -1,0 +1,91 @@
+# TCL 65C9K V670 UART/Magisk attempt
+
+Date: 2026-11-23
+Target: TCL 65C9K / T653T01 / MT5896 / `G08_4K_GB` / V8-T653T01-LF1V670 (AU04), Android 14
+Method: live U-Boot console over PuTTY on COM5, Magisk v31.1 patched stock boot
+Status: TV booted to Android initial setup; Magisk root and runtime SELinux mode are not yet verified.
+
+## Starting evidence
+
+- The passive HDMI service-UART capture had identified U-Boot 2019.04, AVB green/locked, and active slot `_b`. It also showed the 1.8 V UART and the C9K boot chain. See [UART findings](c9k-hdmi-service-uart.md).
+- The owner confirmed the TX/RX level-shifter path was electrically validated. In this session, PuTTY on COM5 visibly exchanged commands and replies with the live U-Boot prompt. The ESP Wi-Fi automation endpoint was not used for these commands; do not treat this session as proof of an automated ESP send timeline.
+- Read-only U-Boot help confirmed:
+  - `avb init <dev>`
+  - `avb set-verity <enable|disable>`
+  - `avb set-devicestate <0/1>` (`0=unlock`, `1=lock`)
+  - `usb_partial_upgrade_to_emmc <file_name> <partition_name>`
+  - `env set`, `saveenv`, `usb start/reset/storage`, `fatls`
+- `mmc list` reported `mtk-mmc-fcie@1c660000: 0 (eMMC)`.
+
+## Images and USB preparation
+
+The offline Magisk boot verifier passed before flashing: Android boot v4, kernel byte-identical to stock, ramdisk changed, Magisk markers present.
+
+| Image | Bytes | SHA-256 |
+|---|---:|---|
+| `c9k_v670_stock_boot.img` | 56,623,104 | `f4f5010d85c2b8d6bcda0670bdb781a51d7d509728e81b661988d2646cc9eaa1` |
+| `c9k_v670_boot_b_magisk.img` | 56,623,104 | `c0d47a7485c97c2ad080a7f5d9f48ef3b9933283682b91d1f3cfb100335d7f73` |
+
+The source images are in the git-ignored `private/c9k-stock-v670/magisk/` directory. The owner asked to format the connected USB stick. Windows identified one removable candidate, a 30 GB `Generic Flash Disk` on `D:` (previous label `ESD-USB`); it was formatted FAT32 as `TCL_C9K_V670`. Both images were copied to its root and destination SHA-256 values matched the source values above.
+
+In U-Boot, the first `usb start` reported zero storage devices. `usb reset` rescanned both controllers and found one USB storage device. `fatls usb 0:1 /` listed:
+
+```text
+56623104  c9k_v670_boot_b_magisk.img
+56623104  c9k_v670_stock_boot.img
+```
+
+The stick was removed from the TV before `reset`.
+
+## Commands executed and observed results
+
+Only `help`/inventory commands were used before the state changes: `help`, `help avb`, `help usb`, `help usb_partial_upgrade_to_emmc`, `help env`, `help saveenv`, `help mmc`, `help fatls`, `mmc list`, `usb start`, `usb storage`, `usb reset`, and `fatls usb 0:1 /`.
+
+Then the following sequence was sent at the live U-Boot prompt:
+
+```text
+avb init mmc
+env set devicestate unlock
+avb set-devicestate 0
+avb set-verity disable
+saveenv
+usb_partial_upgrade_to_emmc c9k_v670_boot_b_magisk.img boot_b
+reset
+```
+
+Observed writes/results:
+
+- `avb init mmc` returned to the prompt without an error message.
+- `env set devicestate unlock` returned to the prompt without an error message.
+- `avb set-devicestate 0` printed `Disable Flash Update Mode`, two 4,096-block MMC writes ending in `OK`, and `Saving Environment to EXT4... done / OK`.
+- `avb set-verity disable` printed one MMC block write ending in `OK`.
+- `saveenv` printed `Saving Environment to EXT4... done / OK`.
+- Flash command: `usb_partial_upgrade_to_emmc c9k_v670_boot_b_magisk.img boot_b`.
+  - U-Boot printed `** Unrecognized filesystem type **` and a one-byte probe, then identified image size `0x03600000` (56,623,104 bytes).
+  - It read 52,428,800 bytes and wrote 102,400 MMC blocks (`OK`), then read 4,194,304 bytes and wrote 8,192 MMC blocks (`OK`). The prompt returned. The warning was not investigated further; the full image byte count and both writes were reported successfully.
+- Target was `boot_b`, because the pre-flash active slot was `_b`. The forum example's `boot_a` was not used.
+- The guide's `setenv -f EnableSelinux permissive` was not run. SELinux was not deliberately switched to permissive.
+
+## Boot result and current state
+
+After the USB stick was removed, `reset` was sent. The UART boot log included `Loading Kernel Image ... OK`, `Loading Ramdisk ... OK`, and `Loading Device Tree ... OK`. It also showed these warnings/errors before continuing: `Unrecognized filesystem type`, a partition-metadata read failure, and a crash-kernel/kdump read failure. No interpretation of those messages has been established.
+
+The owner reports that Android started and now requires initial setup again, consistent with the unlock reset described in the guide. After the reset, `adb devices -l` showed no device and `adb mdns services` showed no Wireless debugging service.
+
+Current facts:
+
+- AVB device state was set to unlocked; dm-verity was disabled.
+- Magisk v31.1 patched boot was written to `boot_b` and Android reached initial setup.
+- This is a persistent Magisk boot modification, not a temporary GhostLock root; returning to stock requires restoring the stock boot, and the device must not be relocked while the patched boot is installed.
+- Root has **not** been verified with `id`/`su`.
+- SELinux runtime mode has **not** been read with `getenforce`; the permissive boot setting was omitted.
+- Magisk Manager has not yet been installed/launched on the TV.
+- The exact stock boot image is retained on the same USB stick and locally. The live recovery command syntax is known, but a stock reflash has not been tested. Do not relock while the patched image is installed.
+- This Magisk route is separate from GhostLock. The V670 GhostLock profile remains `analysis_only`; no GhostLock exploit was run.
+
+## Next steps
+
+1. Finish Android setup, reconnect Wi-Fi, and re-enable Wireless debugging.
+2. Reconnect ADB; install the local Magisk v31.1 APK (`private/c9k-stock-v670/magisk/apk/Magisk-v31.1.apk`, a local git-ignored artifact), launch it, and follow any first-run reboot prompt.
+3. Verify `id`/`su` returns UID 0 and record `getenforce`. Do not switch SELinux to permissive unless a specific AVC denial blocks the audio experiment.
+4. Once rooted access is verified, continue with read-only audio-state collection before changing HAL/MS12/DSP behavior. Keep a stock-boot recovery path ready.
