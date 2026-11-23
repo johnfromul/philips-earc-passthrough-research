@@ -3,7 +3,7 @@
 Date: 2026-11-23
 Target: TCL 65C9K / T653T01 / MT5896 / `G08_4K_GB` / V8-T653T01-LF1V670 (AU04), Android 14
 Method: live U-Boot console over PuTTY on COM5, Magisk v31.1 patched stock boot
-Status: TV booted to Android initial setup; Magisk root and runtime SELinux mode are not yet verified.
+Status: Magisk Manager installed; first-run restart accepted. SELinux was Enforcing before restart; ADB is reconnected, but Magisk root authorization still returns `Permission denied`.
 
 ## Starting evidence
 
@@ -72,20 +72,41 @@ After the USB stick was removed, `reset` was sent. The UART boot log included `L
 
 The owner reports that Android started and now requires initial setup again, consistent with the unlock reset described in the guide. After the reset, `adb devices -l` showed no device and `adb mdns services` showed no Wireless debugging service.
 
+## ADB and Magisk follow-up (2026-11-23)
+
+The owner completed Android setup, enabled Wireless debugging, and approved the PC's ADB RSA key. Magisk v31.1 Manager was installed from the local git-ignored APK with `adb install -r` (`Success`) and launched. The owner accepted the app's first-run restart. After that restart, Wireless debugging was re-enabled and ADB reconnected on a new TLS port.
+
+Read-only verification results after reconnect:
+
+| Command/check | Result |
+|---|---|
+| `adb shell id` | `uid=2000(shell)` |
+| `ps -A` | `magiskd` running as root; Magisk app and its root service process present |
+| `/debug_ramdisk/magisk -v` | `31.1:MAGISK:R` |
+| `/debug_ramdisk/su` | Exists as a link to `./magisk` |
+| `/debug_ramdisk/su -c id` | `Permission denied`; UID 0 has not been established |
+| `getenforce` | `Enforcing` |
+| `ro.boot.vbmeta.device_state` | `unlocked` |
+| `ro.boot.verifiedbootstate` | `orange` |
+| `ro.boot.veritymode` | `disabled` |
+| `ro.boot.slot_suffix` | `_b` |
+
+The ordinary `adb shell su -c id` command reports that `su` is not on the shell PATH; the explicit Magisk path above reaches the binary but currently receives `Permission denied`. Magisk Superuser access for ADB/shell still needs to be enabled or approved in the TV app. SELinux has remained enforcing; no permissive setting was applied.
+
 Current facts:
 
 - AVB device state was set to unlocked; dm-verity was disabled.
-- Magisk v31.1 patched boot was written to `boot_b` and Android reached initial setup.
+- Magisk v31.1 patched boot was written to `boot_b`; Magisk Manager is installed and its first-run restart was accepted.
 - This is a persistent Magisk boot modification, not a temporary GhostLock root; returning to stock requires restoring the stock boot, and the device must not be relocked while the patched boot is installed.
-- Root has **not** been verified with `id`/`su`.
-- SELinux runtime mode has **not** been read with `getenforce`; the permissive boot setting was omitted.
-- Magisk Manager has not yet been installed/launched on the TV.
+- Magisk daemon is running and identifies as version 31.1, but `/debug_ramdisk/su -c id` returned `Permission denied`; UID 0 remains unverified pending Superuser authorization for ADB/shell.
+- SELinux is `Enforcing`; the permissive boot setting was omitted.
+- Wireless debugging was re-enabled after Magisk's restart and ADB reconnected. Continue using the new mDNS TLS port if it changes again.
 - The exact stock boot image is retained on the same USB stick and locally. The live recovery command syntax is known, but a stock reflash has not been tested. Do not relock while the patched image is installed.
 - This Magisk route is separate from GhostLock. The V670 GhostLock profile remains `analysis_only`; no GhostLock exploit was run.
 
 ## Next steps
 
-1. Finish Android setup, reconnect Wi-Fi, and re-enable Wireless debugging.
-2. Reconnect ADB; install the local Magisk v31.1 APK (`private/c9k-stock-v670/magisk/apk/Magisk-v31.1.apk`, a local git-ignored artifact), launch it, and follow any first-run reboot prompt.
-3. Verify `id`/`su` returns UID 0 and record `getenforce`. Do not switch SELinux to permissive unless a specific AVC denial blocks the audio experiment.
+1. In Magisk, enable Superuser access for ADB/`shell` and grant the pending shell request if shown.
+2. Re-run `/debug_ramdisk/su -c id`; proceed only after it returns `uid=0(root)`. Record `getenforce` again after the reboot.
+3. Do not switch SELinux to permissive unless a specific AVC denial blocks the audio experiment.
 4. Once rooted access is verified, continue with read-only audio-state collection before changing HAL/MS12/DSP behavior. Keep a stock-boot recovery path ready.

@@ -4,7 +4,7 @@ Status: preparation only, no flashable image. Owner requested custom firmware af
 
 ## Observed boot constraints
 
-The previous private firmware_inventory.zip properties.txt captured bootloader 01.01.261024, `ro.boot.vbmeta.device_state=locked`, `verifiedbootstate=green`, `veritymode=enforcing`, dynamic partitions, Virtual A/B, and slot `_b`. Those are pre-unlock values. On 2026-11-23 a separate UART/Magisk procedure unlocked AVB, disabled dm-verity, and wrote the patched image to `boot_b`; Android reached initial setup, but root is not yet verified. See the [current device state](roadmap.md#current-device-state-2026-11-23-uartmagisk-session) and [UART attempt log](c9k-v670-uart-root-attempt-2026-11-23.md). This did not produce a custom IEC61937 firmware image or validate an audio modification.
+The previous private firmware_inventory.zip properties.txt captured bootloader 01.01.261024, `ro.boot.vbmeta.device_state=locked`, `verifiedbootstate=green`, `veritymode=enforcing`, dynamic partitions, Virtual A/B, and slot `_b`. Those are pre-unlock values. On 2026-11-23 a separate UART/Magisk procedure unlocked AVB, disabled dm-verity, and wrote the patched image to `boot_b`. The user completed Android setup, installed Magisk v31.1 Manager, and accepted its first-run restart. Wireless debugging is re-enabled and ADB is connected; SELinux is `Enforcing`, but Magisk returns `Permission denied` for the shell's `su` request, so root is not confirmed. See the [current device state](roadmap.md#current-device-state-2026-11-23-uartmagisk-session) and [UART attempt log](c9k-v670-uart-root-attempt-2026-11-23.md). This did not produce a custom IEC61937 firmware image or validate an audio modification.
 
 Use scripts/firmware_preflight.ps1 with the exact current stock package if available. It reads only targeted properties, partition names/mounts, bootctl query results, audio paths/hashes and optional ZIP metadata. It does not retrieve device secrets, flash, reboot or modify settings. Keep firmware packages and outputs private.
 
@@ -32,7 +32,7 @@ Reproduce the last observation with:
 - F3 open-only probe: real third-party API sees IEC61937 profile and can open appropriate direct track; prove route actually eARC. Then low-volume short burst test with correct validated carrier, stop on noise. Compare audio frame progression, decoder/output logs and soundbar. Normal audio plus Atmos is required, not track creation alone.
 - F4 Moonfin MKV integration and regression checks: AC3/EAC3 JOC, PCM, DTS if supported, speaker/ARC, HDMI Atmos, CEC, HDR, TV startup and standby. Restore stock on failure.
 
-No custom IEC61937 firmware image has been built or validated on this exact unit. The separate Magisk UART route has reached Android initial setup; root and a successful audio modification remain unverified. F0 firmware inventory was completed in the 2026-11-19 snapshot; the current boot state and next ADB gate are documented in the roadmap.
+No custom IEC61937 firmware image has been built or validated on this exact unit. The separate Magisk UART route has completed Android setup and installed Magisk Manager, but `su` root and any audio modification remain unverified. F0 firmware inventory was completed in the 2026-11-19 snapshot; the current boot state and next ADB gate are documented in the roadmap.
 
 ## F0 preflight result (2026-11-19)
 

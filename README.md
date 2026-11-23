@@ -11,8 +11,8 @@ Dolby TrueHD Atmos from internal Android TV apps on a TCL 65C9K (Google TV 14, M
 ## Current device state (2026-11-23)
 
 - AVB device state was unlocked and dm-verity disabled through the live U-Boot console. Magisk v31.1 patched image was written to active `boot_b`.
-- The TV booted into Android and is waiting at initial setup after the unlock reset. Root and runtime SELinux state have not yet been verified; the SELinux-permissive boot setting was not used.
-- Finish setup, reconnect Wi-Fi, and re-enable Wireless debugging before ADB verification. Full command/output record: [C9K UART root attempt](docs/c9k-v670-uart-root-attempt-2026-11-23.md).
+- Magisk v31.1 Manager was installed and launched; its first-run restart was accepted. Before that restart SELinux was `Enforcing`, Magisk daemon was running, but `su` returned `Permission denied`, so root is not confirmed.
+- Wireless debugging has been re-enabled after the restart and ADB is connected again. Magisk still denies the shell's `su` request; enable/approve Superuser access for ADB. Full command/output record: [C9K UART root attempt](docs/c9k-v670-uart-root-attempt-2026-11-23.md).
 
 Plan and verified details: **[docs/roadmap.md](docs/roadmap.md)**.
 

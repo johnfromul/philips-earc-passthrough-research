@@ -23,11 +23,11 @@ The previous roadmap (a chronological log) is preserved in git history before th
 | AVB | `avb set-devicestate 0` completed; environment save reported `OK` |
 | dm-verity | Disabled with `avb set-verity disable`; MMC write reported `OK` |
 | Boot image | Magisk v31.1 image written to active slot `boot_b`; U-Boot reported both MMC writes `OK` |
-| Android | Kernel, ramdisk, and device tree loaded `OK`; TV booted to initial setup and requires reconfiguration |
-| ADB | No device or Wireless debugging mDNS service was visible after reset |
-| Root / SELinux | Root is not yet verified; SELinux mode is not yet checked. The permissive boot setting was not used |
+| Android | Kernel, ramdisk, and device tree loaded `OK`; owner completed the initial setup after the unlock reset |
+| ADB | Wireless debugging re-enabled after Magisk's first-run restart; ADB is connected over the new TLS port |
+| Root / SELinux | Magisk 31.1 is active; `/debug_ramdisk/su -c id` returns `Permission denied`, so UID 0 is unverified. SELinux is `Enforcing` |
 
-The user needs to finish setup, reconnect Wi-Fi, and re-enable Wireless debugging. Continue with the [UART root attempt log](c9k-v670-uart-root-attempt-2026-11-23.md). The 2026-11-19 table above is a pre-unlock baseline, not the current boot state.
+The user completed setup, accepted Magisk's first-run restart, and re-enabled Wireless debugging. Enable or approve Magisk Superuser access for ADB/`shell`, then continue with the [UART root attempt log](c9k-v670-uart-root-attempt-2026-11-23.md). The 2026-11-19 table above is a pre-unlock baseline, not the current boot state.
 
 Static claims re-verified on binaries pulled from the live TV (`private/verify_20261119/`):
 - `libaudioclient.so` contains the TCL filter `... is not /system/bin/mediaserver, remove support direct IEC61937`.
