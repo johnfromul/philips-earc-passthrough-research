@@ -182,3 +182,29 @@ So even with the bootloader unlocked and verity disabled, a modified `dsp.bin`/`
 authentication and not run. This **definitively closes** the DSP-firmware-patch avenue: the limitation is not reachable
 at any layer — userspace/kernel levers are inert/absent (proven), there is no config/param lever (proven), and the DSP
 firmware is TEE-gated. **No practical path to internal-app TrueHD Atmos exists on V670.** Working route stays E-AC3/DD+ JOC.
+
+## 10. IEC61937/MAT passthrough experiment — the blocker is ARC-vs-eARC routing, not the gates
+
+Ran the app's `MAT encoding + full IEC burst 48k` test (feeds pre-built `truehd.iec`) with a Frida hook ready to open
+the HAL IEC gate. Results:
+- App log: `enc=19` (ENCODING_IEC61937), `direct=true directSupport=0x3` — the IEC61937 direct track **was allowed and
+  built** (session 225), routed to `type=10` (HDMI_ARC). The HAL `utils_isPassthroughSupported` hook **never fired** —
+  so the **gates do not block** this path (corrects the roadmap's "blocked by client + 2 HAL gates").
+- AudioFlinger: a real **`AUDIO_FORMAT_MAT` (0x24) OFFLOAD** output opened (`DIRECT|COMPRESS_OFFLOAD|GAPLESS_OFFLOAD`),
+  audio patch to **HDMI_ARC**, **all 61.5 M frames written**. But the app's playback `head=0` throughout → **silent**,
+  soundbar briefly showed "Dolby Surround".
+- **Root cause:** the output routed to **`HDMI_ARC`** (legacy ARC; profiles top out at `E_AC3_JOC` — no MAT/TrueHD),
+  not **`HDMI_EARC`** (whose policy profiles DO include `DOLBY_TRUEHD 0x0e` and `MAT 0x24`). MAT cannot be transmitted
+  over ARC, so `head=0`/silence is expected. `ro.feature.hdmi_earc=false`; only `HDMI_ARC` is an available output,
+  although `earc_enabled=2` / `tcl_app_settings_eARC_mode=true` and the eARC HW link carries TrueHD for HDMI bypass.
+
+**Significance:** the MAT path is a **passthrough** (app supplies the MAT; DSP transmits it) — unlike the
+decode→re-encapsulate path that strips objects — so if an object-bearing MAT reached **eARC**, Atmos could survive.
+The limitation reduces to the Android audio framework confining internal apps to the **ARC** output (JOC max) while the
+full-bandwidth **eARC** path (MAT/TrueHD) is used only by the HW HDMI bypass.
+
+**Tried:** `resetprop ro.feature.hdmi_earc true` + `audioserver` restart — did **not** expose `HDMI_EARC` (device
+availability is set earlier, by the vendor eARC/HDMI service at init). Reverted; device left clean.
+**Open next step:** set the flag at boot via a Magisk `system.prop` module and reboot, then retest — uncertain (the flag
+may not change HAL behavior, and eARC output for the mixer path may be unsupported), but the most promising remaining
+lead, since `head=0` on ARC is expected and eARC routing might actually render the MAT.
