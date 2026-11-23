@@ -151,8 +151,17 @@ path. The Atmos difference is purely **routing**: HDMI passes the original objec
 ## Final conclusion (V670, rooted, exhaustive)
 
 Across userspace (Frida), kernel (kprobes), and the full DSP param namespace (split-BTF resolved), **no lever for
-internal-app TrueHD Atmos exists on V670**. `MatMlpOnly` is inert (proven by live override). The behavior lives in the
-closed, signed audio-DSP firmware's MAT encapsulation; changing it would require DSP-firmware modification, which
-verified boot (green, locked) blocks regardless. **A clean patch is not achievable on this firmware.** The working
-internal-Atmos route remains **E-AC3 / DD+ JOC** (`isAtmos=1`). No device modifications were persisted this session
-(Frida/kprobes are volatile; partition backups taken as a precaution were never needed).
+internal-app TrueHD Atmos exists on V670**. `MatMlpOnly` is inert (proven by live override).
+
+**Correction on verified boot:** the earlier roadmap snapshot (pre-root, 2026-11-19) reported green/locked. Live on the
+rooted device it is `vbmeta.device_state=unlocked`, `verifiedbootstate=orange`, `veritymode=disabled` — AVB is **off**,
+so partitions/firmware **are** modifiable. That does not yield a fix: there is no config/param lever (proven), and the
+only remaining surface is the **audio-DSP firmware code** (`/vendor/firmware/dsp.bin` 53 KB, opaque/compressed, unknown
+DSP ISA, no strings; `/vendor/firmware/DOLBY.bin` is gain/LUT **data**, not config; the MS12-on-DSP code in `armfw`
+MULTIBIN is likewise opaque). Patching that would require reverse-engineering an unknown, likely integrity-checked DSP
+blob to add an object-carrying MAT path that may not exist in it — impractical, uncertain payoff. So the blocker is not
+verified boot (it's disabled) but the **opaque closed DSP firmware** with no exposed control at any reachable layer.
+
+**A clean patch is not practically achievable on this firmware.** The working internal-Atmos route remains
+**E-AC3 / DD+ JOC** (`isAtmos=1`). No device modifications were persisted this session (Frida/kprobes are volatile and
+removed; partition backups taken as a precaution were never needed).
