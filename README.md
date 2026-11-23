@@ -6,7 +6,7 @@ Dolby TrueHD Atmos from internal Android TV apps on a TCL 65C9K (Google TV 14, M
 
 - **Works:** E-AC3 Atmos from apps; TrueHD Atmos from an external HDMI source.
 - **Does not work:** TrueHD from apps plays clean but as Dolby Surround (`isAtmos=0`). IEC61937 is blocked by a TCL client process check and two HAL format gates. MAT payloads from apps are not recognized. TCL Media Center drops MKV TrueHD tracks (`vendor.mtk.mkv.support.truehd` unset, not settable from shell).
-- **Leading hypothesis:** the pipeline sets `MatMlpOnly=1` only for the internal (MM) source, which would strip Atmos. Testing it needs root.
+- **Resolved (2026-11-23, rooted live trace — [frida-live-trace-session](docs/frida-live-trace-session.md)):** the old `MatMlpOnly` hypothesis is **disproven** — forcing it `1→0` live via Frida changed nothing (the HAL field is inert). The real cause is **routing + DSP firmware**: external HDMI passes the original object-bearing MAT through (bypass), while the internal source is MAT-**encapsulated by the audio DSP without the Atmos object (EVO) layer**. A clean MM-vs-HDMI diff of the full DSP SHM-param namespace (split-BTF resolved) shows **no Atmos param** differs — the behavior lives in the closed DSP firmware, which is **TEE/Secure-Engine authenticated** (so modifiable only with OEM keys, independent of the now-disabled AVB). **No practical patch exists on V670.** The one remaining untested avenue is forcing **IEC61937/MAT passthrough** from an app (now that root can bypass the userspace gates); it is not TEE-blocked but its feasibility (valid Atmos-MAT framing + whether app-fed IEC passthrough preserves objects) is unproven.
 
 ## Current device state (2026-11-23)
 
