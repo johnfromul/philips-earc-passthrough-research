@@ -95,3 +95,31 @@ firmware. A clean patch is therefore **not demonstrated to exist** on V670 via u
 Remaining avenues (higher effort, uncertain payoff): resolve the SHM param ids via base BTF + AArch64 disasm of the
 `Set_SHM_PARAM` dispatch and test a targeted write; or pursue the DSP firmware itself. The working Atmos route from
 internal apps remains **E-AC3 / DD+ JOC** (`isAtmos=1`), which is unaffected by this limitation.
+
+## 7. Option B: DSP SHM param namespace resolved (split BTF)
+
+Pulled the running kernel's base BTF (`/sys/kernel/btf/vmlinux`, `private/btf_20261123/`) and used `base_str_len`
+(`0x2062bb`) to resolve the module's **split-BTF** `R2_SHM_PARAM` enumerators (the `a`-group argument to
+`HAL_DEC_R2_Set_SHM_PARAM`). The DEC enum is BTF enum #136 (299 members). Resolved ids (BTF tail-shares strings, so
+name-offsets land mid-string — exact names read from context):
+
+| id (`a`) | name | captured |
+|---|---|---|
+| `0x62` | `R2_SHM_PARAM_DDP_ENCODE_EN` | HDMI=4; MM did not write it |
+| `0x73` | `R2_SHM_PARAM_OMX_DOLBY_ATMOS_INPUT_DELAY` | 0 |
+| `0x78` | `R2_SHM_PARAM_PCMR_DDPENC_ATMOS_LOCK` | — |
+| `0x79` | `R2_SHM_PARAM_OMX_ATMOS_VALID` | — |
+| `0xba` | `R2_SHM_PARAM_ENCODE_PATH_MIN_DELAY` | HDMI=0 |
+| `0xda` | `R2_SHM_PARAM_…MI_RX_MCH_PCM_DELAY` | HDMI-only (RX artifact — **not** a lever) |
+
+Atmos-scoped DSP params exist — `OMX_ATMOS_VALID`, `PCMR_DDPENC_ATMOS_LOCK`, `OMX_DOLBY_ATMOS_INPUT_DELAY` — but
+none is a clean "eARC **MAT** object-encode enable"; they are OMX-input / DDP-encoder / PCM-renderer scoped. Consistent
+with the earlier finding: internal TrueHD→eARC is MAT **encapsulation** with no exposed MAT-EVO enable. Resolver:
+`scratchpad` split-BTF parser; base/module BTF in `private/btf_20261123/` (git-ignored).
+
+### Status of option B
+The param namespace is mapped, candidate atmos params are named, but **proving/forcing a lever now requires kernel-arg
+injection** on `HAL_DEC_R2_Set_SHM_PARAM` (a custom kprobe-override module or a DSP shared-memory write) — ftrace
+kprobes can only observe, not modify. That is a real escalation in risk, and the candidate params are not clearly the
+eARC-MAT lever. Recommended before attempting: one clean MM-vs-HDMI capture of ids `0x62/0x73/0x78/0x79` to confirm a
+single source-gated atmos param, then decide whether a kernel-arg override is worth the risk.
