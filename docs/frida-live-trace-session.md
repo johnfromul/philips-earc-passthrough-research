@@ -208,3 +208,25 @@ availability is set earlier, by the vendor eARC/HDMI service at init). Reverted;
 **Open next step:** set the flag at boot via a Magisk `system.prop` module and reboot, then retest — uncertain (the flag
 may not change HAL behavior, and eARC output for the mixer path may be unsupported), but the most promising remaining
 lead, since `head=0` on ARC is expected and eARC routing might actually render the MAT.
+
+## 11. eARC output enabled via Magisk flag — sound over eARC, but internal TrueHD still decoded (no Atmos)
+
+Set `ro.feature.hdmi_earc=true` via a Magisk `system.prop` module and rebooted. Results:
+- **Worked at the framework level:** `HDMI_EARC` is now the available output device (replacing `HDMI_ARC`); normal audio
+  routes to eARC (`0x40001`); and the `HDMI_EARC` output policy now advertises **DTS_HD (0xC), MAT (0x24) and
+  DOLBY_TRUEHD (0x0e)** profiles (ARC had only up to E-AC3-JOC). The runtime `resetprop` had failed; the boot-time flag
+  succeeded (device availability is fixed at init by the vendor eARC service).
+- **MAT test (`truehd.iec`, enc=19):** now routes to eARC (`type=29`), all 61.5 M frames written, but **`head=0`** still
+  → silent. The DEC decode params fire (same as decode path); the MAT framing isn't rendered.
+- **TrueHD RAW (`truehd.thd`, enc=14 DOLBY_TRUEHD):** over eARC it **renders** (head advanced to 910320, audible) —
+  but `applyset`/bypass never fires, so it is **decoded + re-encapsulated** (objects stripped) → **still Dolby Surround**,
+  exactly as over ARC.
+
+**Conclusion:** enabling eARC output (a real, useful change — unlocks eARC-class formats and higher-quality output for
+internal apps) does **not** yield TrueHD Atmos. Internal compressed audio is always **decoded** by the DSP; the only
+passthrough (`HAL_AUDIO_DigitalTx_ApplySetting` bypass) is gated to the HDMI hardware source. The platform passes DD+/
+E-AC3 through (so **JOC Atmos works**) but **decodes TrueHD** into object-stripped MAT. There is no internal TrueHD/MAT
+passthrough path, so internal-app TrueHD Atmos remains unreachable even with eARC enabled and the IEC/MAT gates open.
+
+The Magisk `earc_output_test` module (forces eARC output) is a reasonable **keep** on its own merits (eARC > ARC), but
+it is not required and does not deliver Atmos; remove it to revert to stock ARC routing.
