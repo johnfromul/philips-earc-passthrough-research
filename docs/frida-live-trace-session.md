@@ -123,3 +123,36 @@ injection** on `HAL_DEC_R2_Set_SHM_PARAM` (a custom kprobe-override module or a 
 kprobes can only observe, not modify. That is a real escalation in risk, and the candidate params are not clearly the
 eARC-MAT lever. Recommended before attempting: one clean MM-vs-HDMI capture of ids `0x62/0x73/0x78/0x79` to confirm a
 single source-gated atmos param, then decide whether a kernel-arg override is worth the risk.
+
+## 8. Clean MM-vs-HDMI DSP-param diff — NO Atmos lever exists (option B conclusion)
+
+Re-armed the DEC kprobe and captured both sources cleanly (same filter, full startup). Every `HAL_DEC_R2_Set_SHM_PARAM`
+param that differs between internal TrueHD (no Atmos) and HDMI TrueHD (Atmos) is a **timing/sync/buffer** setting —
+none is an object/Atmos enable:
+
+| id | name | internal | HDMI |
+|---|---|---|---|
+| 0x9 / 0xa | `AAC_AVOFFSET` / `MPEGH_AVOFFSET` | 0x64 | 0 |
+| 0x25 | `ES2_WR_PTR` | 0xa4 | 0 |
+| 0x57 | `RFSIGNAL_TYPE` | 1 | 0 |
+| 0x59 | `TTS_EN` | 1 | 0 |
+| 0x7e | `HEADPHONE_DELAY` | 1 | 0 |
+| 0x87 / 0x88 | `LOW_LATENCY_LIMITER_PCM_SKIP_TARGET` / `ES_PassThrough_DelaySmp` | 0 | 1 |
+| 0xd7 / 0xd8 | `CPU_SOUND1_ALGORITHM_DELAY` / `MPOST_CAPTURE_READ_OFFSET` | — | 13 / 7 |
+| 0x62 | `DDP_ENCODE_EN` | **4** | **4** (same) |
+| 0x79 | `OMX_ATMOS_VALID` | **not written** | **not written** |
+
+**Verdict:** there is **no exposed DSP SHM parameter** (nor userspace/kernel flag) that flips Atmos for the internal
+path. The Atmos difference is purely **routing**: HDMI passes the original object-bearing MAT bitstream through
+(bypass via `HAL_AUDIO_DigitalTx_ApplySetting`); internal audio is MAT-**encapsulated** by the DSP without the object
+(EVO) layer, and the stock firmware exposes no control to include it. The atmos-named params that exist
+(`OMX_ATMOS_VALID`, `PCMR_DDPENC_ATMOS_LOCK`, …) are not driven on either path.
+
+## Final conclusion (V670, rooted, exhaustive)
+
+Across userspace (Frida), kernel (kprobes), and the full DSP param namespace (split-BTF resolved), **no lever for
+internal-app TrueHD Atmos exists on V670**. `MatMlpOnly` is inert (proven by live override). The behavior lives in the
+closed, signed audio-DSP firmware's MAT encapsulation; changing it would require DSP-firmware modification, which
+verified boot (green, locked) blocks regardless. **A clean patch is not achievable on this firmware.** The working
+internal-Atmos route remains **E-AC3 / DD+ JOC** (`isAtmos=1`). No device modifications were persisted this session
+(Frida/kprobes are volatile; partition backups taken as a precaution were never needed).
