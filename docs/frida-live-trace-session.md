@@ -58,3 +58,16 @@ Preconditions before any write: confirmed partition backups (plan step 0), sound
 frida-server pushed to `/data/local/tmp/frida-server-17` (ARM32, run via `su`). Host frida 17.27.4 on Python 3.13.
 kprobes are non-persistent (cleared on reboot). Tools: `scratchpad` harness `fr_stream.py` + `observe2.js`;
 kmod BTF helpers `btf_shm.py` (enum name↔value) — note the `a`-group ids are not BTF enumerators here.
+
+## 5. Causation test #1 (reversible Frida override) — MatMlpOnly RULED OUT
+
+With partition backups secured (roadmap step 0), forced `MatMlpOnly: 1→0` at the HAL boundary
+(`_MI_LAPAF_FILTER_DecoderCommon_SetMatMlpOnly`) during internal TrueHD playback. The override fired
+(`FORCED_MlpOnly_1to0` logged), but the soundbar **stayed Dolby Surround** — no change. `HAL_AUDIO_DigitalTx_ApplySetting`
+still never fired for the internal path (0×). The `0xda` DEC param proved noisy (two indices, transient 0/1 values),
+so it is **not** a clean static flag either.
+
+**Conclusion:** the HAL `MatMlpOnly` is confirmed live to be **inert** — not the lever. The real control is inside the
+DSP's TrueHD→MAT encapsulation (`mat_enc`), set via a `dolby_param` SHM field. This contrast is MM-only (HDMI passes
+the original MAT through, so it never runs `mat_enc`), so it can't be isolated by an MM-vs-HDMI diff — it needs the
+`dolby_param` struct field that enables EVO/Atmos object carriage, identified from the module directly.
