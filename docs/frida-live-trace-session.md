@@ -71,3 +71,27 @@ so it is **not** a clean static flag either.
 DSP's TrueHD→MAT encapsulation (`mat_enc`), set via a `dolby_param` SHM field. This contrast is MM-only (HDMI passes
 the original MAT through, so it never runs `mat_enc`), so it can't be isolated by an MM-vs-HDMI diff — it needs the
 `dolby_param` struct field that enables EVO/Atmos object carriage, identified from the module directly.
+
+## 6. DSP param naming — blocked by split BTF; and a scope caveat
+
+The module's BTF names an `R2_SHM_PARAM_PCMR_ATMOS_ENCODE_ENABLE` (and `..._PCMR_ATMOS_ENABLE`,
+`..._OMX_DOLBY_ATMOS_RESET_EVO_INDEX_READ_WRITE_POINTER`). But:
+- **Split BTF:** the module's type `name_off`s are relative to the *base* (vmlinux) BTF string table, so the
+  enumerator name↔value (i.e. name → the numeric `a` group / `b` index used by `HAL_*_Set_SHM_PARAM`) cannot be
+  resolved from the module alone. Mapping needs the device's base BTF (`/sys/kernel/btf/vmlinux`) or AArch64
+  disassembly of the setter's call sites.
+- **Scope caveat:** `PCMR` = PCM *renderer* — these atmos params most likely drive the internal **DAP speaker
+  virtualizer** atmos (the `+0x438` DAP-enable seen statically), not the eARC **MAT object carriage**. No
+  `MAT_ENC`-scoped atmos/EVO *enable* param was found. This is consistent with the internal TrueHD→eARC path being
+  MAT **encapsulation that does not embed the Atmos EVO**, with no stock switch exposed to change it.
+
+## Session conclusion
+
+Live, on the rooted device, this session **ruled out** the long-standing leading hypothesis (HAL `MatMlpOnly`) and
+confirmed the mechanism is a **DSP-firmware behavior**: internal TrueHD is MAT-encapsulated without the Atmos object
+layer, while HDMI passes the original object-bearing MAT through (`DigitalTx_ApplySetting` bypass). No single
+userspace or kernel-param lever has been shown to flip it, and the deciding logic lives in the closed audio-DSP
+firmware. A clean patch is therefore **not demonstrated to exist** on V670 via userspace/kernel instrumentation.
+Remaining avenues (higher effort, uncertain payoff): resolve the SHM param ids via base BTF + AArch64 disasm of the
+`Set_SHM_PARAM` dispatch and test a targeted write; or pursue the DSP firmware itself. The working Atmos route from
+internal apps remains **E-AC3 / DD+ JOC** (`isAtmos=1`), which is unaffected by this limitation.
