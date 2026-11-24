@@ -22,6 +22,11 @@ Disabled for user 0 (restore any with `pm enable --user 0 <pkg>`):
 | com.netflix.ninja | Netflix |
 | com.netflix.tokenmanager | Netflix token manager |
 | com.disney.disneyplus | Disney+ |
+| com.amazon.amazonvideo.livingroom | Prime Video |
+| com.wbd.stream | HBO Max / Max |
+
+(`com.tcl.channelplus` = TCL's live "Channel" app, already in the list above. `com.tcl.tv` is the antenna/tuner
+player and was left enabled.)
 
 Kept deliberately: `com.android.tv.feedbackconsent` (consent UI, not the collector). Firmware OTA re-enables disabled
 packages — re-run after updates.
@@ -50,6 +55,25 @@ stock launcher is disabled, so `launcherx` was **kept** as registered Home):
   stays the registered Home/fallback. Trade-off of the safe mode: a brief flash of the stock launcher before the jump
   (eliminating it needs disabling `launcherx`, the risky one-way step, so it was not done). Note: `adb install -r`
   clears the accessibility-services setting, so re-apply the two `settings put` lines after any reinstall.
+- **Build config:** the default APK ships `stock_home_redirect` empty (no redirect). It was set in
+  `launcher/app/src/main/res/values/config.xml` to `com.google.android.apps.tv.launcherx` before building; the
+  HomeKeyService then subscribes to `TYPE_WINDOW_STATE_CHANGED` and jumps when `launcherx` opens.
+- **Boot persistence (important):** Android resets `accessibility_enabled` to 0 on every boot, and re-writing
+  `enabled_accessibility_services` to its current value does not fire the rebind observer — so after a reboot the
+  redirect is dead until the service list is *changed*. A Magisk boot script handles this:
+  `/data/adb/service.d/cleanyourtv-home.sh` (source kept at `private/launcher/cleanyourtv-home.sh`) waits for
+  `sys.boot_completed`, clears then re-sets the accessibility service list (forcing the rebind), sets
+  `accessibility_enabled=1`, re-asserts `ota_disable_automatic_update=1`, and foregrounds the new launcher. Remove it
+  with the launcher revert.
+
+## 3b. Updates disabled
+
+`settings put global ota_disable_automatic_update 1` (persists; also re-asserted by the boot script). The Google TV
+system/firmware update is driven by Google Play Services (`com.google.android.gms` SystemUpdate) which cannot be
+disabled without breaking the device; the global flag stops the automatic check/download. With the bootloader
+unlocked and Magisk present, a full OTA would in any case fail to apply (modified boot / AVB) or strip root, so the
+flag plus declining any manual prompt is the practical "updates off". Re-enable: `settings put global
+ota_disable_automatic_update 0`.
 
 Revert the launcher:
 ```
@@ -61,11 +85,11 @@ adb shell pm uninstall com.gathin.tvhome      # or: pm disable-user --user 0 com
 
 ## 3. Magisk module: `earc_output_test` (optional)
 
-`/data/adb/modules/earc_output_test/system.prop` sets `ro.feature.hdmi_earc=true` at boot, which makes the Android
-framework expose `HDMI_EARC` as the audio output (with MAT/TrueHD/DTS-HD profiles) instead of `HDMI_ARC` (JOC-max).
-**It does not deliver TrueHD Atmos** (internal TrueHD is still decoded by the DSP — see
-[frida-live-trace-session](frida-live-trace-session.md) §11); it only lifts the ARC format cap. Keep or remove by taste.
-Remove: `adb shell su -c "rm -rf /data/adb/modules/earc_output_test"` then reboot.
+`/data/adb/modules/earc_output_test/system.prop` set `ro.feature.hdmi_earc=true` at boot, making the framework expose
+`HDMI_EARC` (MAT/TrueHD/DTS-HD profiles) instead of `HDMI_ARC` (JOC-max). It did **not** deliver TrueHD Atmos
+(internal TrueHD is still decoded by the DSP — see [frida-live-trace-session](frida-live-trace-session.md) §11), only
+lifted the ARC format cap. **Removed at the owner's request** (`rm -rf /data/adb/modules/earc_output_test` + reboot);
+audio is back to stock ARC-mode routing. Recreate it from §7 of the trace doc if ever wanted.
 
 ## 4. Boot warning (orange state) — investigated, NOT modified
 
