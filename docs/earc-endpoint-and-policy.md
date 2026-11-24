@@ -2,6 +2,32 @@
 
 Privacy work is separate; no package changes in this commit. Reopened local original ELF files and verified audio.primary.merak.so SHA-256 e47bfd65a6055987fcdfbc9a67166b8024061504d7c5d84e7e88b2b53cf10bad and libmi3_audio_hal.so SHA-256 07572cae7d738df1cf5cd2d18bf6b3e74472a8c9412d70ba6c12b8f365183e2a.
 
+## Live Wireless ADB follow-up (2026-11-23)
+
+Connected to the rooted C9K over Wireless ADB; `su -c id` returned UID 0 in Magisk context. Read-only checks showed:
+
+- `/proc/asound/cards`: card 0 is `mtktvsndcard`. `/proc/asound/pcm` lists `00-09: tvsnd-common-pcm` with six playback substreams, plus capture and loopback devices. There is no separately named `EARC NONPCM Playback` PCM endpoint.
+- `/dev/snd` contains `pcmC0D9p` and compressed devices `comprC0D12` through `comprC0D16`. This inventory does not map D9 or D12–D16 to the HAL's named eARC non-PCM lookup.
+- `/proc/modules` shows `mtk_earc`, `mtk_tvsnd_machine`, `mtk_tvsnd_platform`, `mtk_tvsnd_soc` and `mtk_tvsnd_dsp_loader` loaded. This confirms the eARC/audio drivers are resident, not that Android apps can feed their eARC path.
+- Live SHA-256 values for `/vendor/lib/libmi3_audio_hal.so` and `/vendor/lib/hw/audio.primary.merak.so` are `07572cae7d738df1cf5cd2d18bf6b3e74472a8c9412d70ba6c12b8f365183e2a` and `e47bfd65a6055987fcdfbc9a67166b8024061504d7c5d84e7e88b2b53cf10bad`, respectively; both match the binaries analyzed in this repository.
+- Disassembly of that exact live HAL clarifies the lookup: `MI_APAF_ALSA_UTILS_InitEarcNonPcmDevInfo` passes the string `EARC NONPCM Playback` to `_MI_APAF_ALSA_UTILS_GetDevInfo`. The helper reads `/proc/asound/pcm` into a 0x800-byte buffer, searches for the supplied name, then parses the `card-device:` prefix to return numeric ALSA card/device indices. The current listing has no matching line, so this initializer cannot resolve an eARC-named **PCM** endpoint in the current boot. It does not map the separate compressed nodes D12–D16.
+- `ro.feature.hdmi_earc=false`; `/data/adb/modules/earc_output_test` does not exist. `dumpsys media.audio_policy` lists Speaker and HDMI ARC as available outputs; HDMI EARC is declared in policy but is not currently available.
+- Targeted sysfs metadata reads returned `Permission denied`, so the PCM class/uevent metadata and a stronger ALSA-to-HAL mapping are still unavailable. No PCM node was opened and no mixer or device setting was changed.
+
+This is the live state at this follow-up and supersedes the earlier note below that `/proc` reads were denied and did not enumerate the PCM devices. It also means the earlier boot session that exposed HDMI_EARC via `earc_output_test` is not the current configuration.
+
+## Re-enabled eARC endpoint check (2026-11-23)
+
+For the next isolated step, recreated the previously used property-only Magisk module `earc_output_test` with
+`ro.feature.hdmi_earc=true` and rebooted. Root/Wireless ADB returned after boot; the property is now `true`, and
+AudioPolicy lists **HDMI EARC** as an available output. Its dynamic profiles include MAT and Dolby TrueHD at 48, 96
+and 192 kHz.
+
+The ALSA inventory did **not** change: `/proc/asound/pcm` still lists D9 only as `tvsnd-common-pcm`, with no
+`EARC NONPCM Playback` entry; `/dev/snd` still has compressed nodes D12–D16. Thus enabling the framework eARC output
+does not register the PCM name that `MI_APAF_ALSA_UTILS_GetDevInfo` searches for. This still does not rule out another
+driver-level transport, but D9/D12–D16 remain unmapped. No playback data was sent and no ALSA node was opened.
+
 ## Live write boundary
 
 utils_out_write_data, Thumb VA 0x89040 in primary HAL, passes a stack data packet to MI_APAF_DataManager_WriteData. At 0x893e8 it places the buffer and remaining byte count at offsets +8/+12 relative to the packet at sp+0x38; 0x893ec copies two words from stream +0x1f0, 0x893f4 calls helper 0x8a2b0 that updates other packet fields. 0x893f8–0x893fc passes a pipeline handle and the packet to PLT 0xcf850. Confirmed by .rel.plt entry 469, R_ARM_JUMP_SLOT at 0xd37d0, MI_APAF_DataManager_WriteData. Return value is subtracted from remaining bytes and added to the accounted bytes at 0x89402–0x8940a; this matters for partial writes. The conditional parser branch also calls this API at 0x89756 after Parser_Read. Do not assume all streams use that parser.

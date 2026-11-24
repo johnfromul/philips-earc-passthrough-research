@@ -41,10 +41,10 @@ Audio-only HW sync logs: `hw_sync_id 18446744073709551615`, invalid/unassigned I
 | IEC stereo 192 kHz | Construction failed |
 | IEC 5.1 192 kHz | Construction failed |
 | IEC 7.1 48 kHz | Construction failed |
-| MAT encoding with full IEC burst 48 kHz | 61,501,440 bytes accepted, head 0, no sound |
-| MAT encoding with full IEC burst 192 kHz | 61,501,440 bytes accepted, head 0, no sound |
+| MAT encoding (19) with IEC bursts, 48 kHz track config | 61,501,440 bytes accepted, head 0, no sound |
+| MAT encoding (19) with IEC bursts, 192 kHz track config | 61,501,440 bytes accepted, head 0, no sound |
 
-The MAT HAL path opened, but reported `Too long without an audio frame`, so accepted writes are not evidence of successful frame recognition. These are experimental vendor input layouts, not a standard Dolby MAT 2.x encoder. All tested combinations failed; this does not prove every possible vendor framing fails.
+These two probes declared Android `ENCODING_DOLBY_MAT` (19) but fed IEC61937 bursts from `truehd.iec`; they did not test `ENCODING_IEC61937` (13) or establish a working MAT framing contract. The MAT HAL path opened, but reported `Too long without an audio frame`, so accepted writes are not evidence of successful frame recognition. All tested combinations failed; this does not prove every possible vendor framing fails.
 
 ### v0.2.0: full A/V tunnel
 
@@ -85,4 +85,30 @@ The subsequent [HDMI comparison](hdmi-comparison.md) records hardware MAT input 
 
 ## Evidence strength
 
-Raw logs were captured at different times and contain repeated tests; compare by session and timestamp, not global grep counts. Some dumps were taken after playback stopped. User observations are recorded separately from HAL state; missing logs, unsupported profiles and silence are distinct outcomes. No HDMI analyzer, kernel trace, proprietary DSP firmware trace, or successful IEC packet injection has been obtained. The audio experiments recorded here did not modify system partitions or use root. A separate UART/Magisk boot modification was performed on 2026-11-23; its state and pending root verification are recorded in the [C9K UART root attempt log](c9k-v670-uart-root-attempt-2026-11-23.md). See [evidence index](../evidence/README.md) for local artifact hashes and derived data.
+Raw logs were captured at different times and contain repeated tests; compare by session and timestamp, not global grep counts. Some dumps were taken after playback stopped. User observations are recorded separately from HAL state; missing logs, unsupported profiles and silence are distinct outcomes. No HDMI analyzer, kernel trace, proprietary DSP firmware trace, or successful IEC packet injection has been obtained. See [evidence index](../evidence/README.md) for local artifact hashes and derived data.
+
+## Rooted eARC endpoint retest (2026-11-23)
+
+Restored the reversible `earc_output_test` Magisk property module and rebooted. `ro.feature.hdmi_earc=true`; AudioPolicy now lists HDMI EARC as available and advertises MAT and Dolby TrueHD profiles. ALSA remains unchanged: `/proc/asound/pcm` has D9 as `tvsnd-common-pcm`, but no `EARC NONPCM Playback` line. The exact live HAL helper searches this file for that name, so it still cannot resolve the named PCM endpoint in this boot.
+
+Used the installed Audio Passthrough Tester v0.2.4 with **Open only**; it creates and releases a track without streaming sample bytes:
+
+| Mode | Encoding / config | Query | Open result |
+|---|---|---|---|
+| IEC HBR | `ENCODING_IEC61937` (13), 192 kHz, 7.1 | `direct=false`, `directSupport=0x0` | `AudioTrack.Builder.build()` failed: `Cannot create AudioTrack` |
+| IEC stereo | `ENCODING_IEC61937` (13), 192 kHz, stereo | `direct=false`, `directSupport=0x0` | `AudioTrack.Builder.build()` failed: `Cannot create AudioTrack` |
+| MAT BE | `ENCODING_DOLBY_MAT` (19), 48 kHz, 7.1 | `direct=true`, `directSupport=0x3` | Track initialized (`state=1`, session 89); no playback |
+
+These open-only results show that the current eARC policy admits a MAT-tagged track but refuses the tested IEC61937 AudioTrack profiles. At that point no payload had been written, so the MAT byte contract, routing, and Atmos preservation were still unverified. No ALSA node was opened, and no mixer control was written. The separate UART/Magisk boot modification and current device state are recorded in the [C9K UART root attempt log](c9k-v670-uart-root-attempt-2026-11-23.md) and [endpoint inventory](earc-endpoint-and-policy.md).
+
+### MAT BE playback attempt
+
+Later ran the installed MAT BE mode for one attempt. AudioTrack reported route ID 18 / `AUDIO_DEVICE_OUT_HDMI_EARC`, then accepted 286,720 bytes (four complete 61,424-byte units plus a partial next unit). The playback head stayed at 0 and the timestamp position remained 0. After 3 seconds without additional write progress, the app aborted with `No write progress for 3s` and released the track. These are AudioTrack write counts, **not proof that those bytes reached the HDMI wire**. The operator reported that no sound was heard. No retry or IEC payload playback followed.
+
+#### Read-only failure diagnosis
+
+The saved `probe.log` confirms this was `ENCODING_DOLBY_MAT` (19), 48 kHz/7.1, with no HW A/V sync. The device copy of `truehd.matbe` has the SHA-256 recorded in its preparation manifest, so this run used the prepared sample without transfer corruption. That only checks file identity; it does not prove that the extracted payload matches the TV HAL's input contract.
+
+The contemporaneous HAL/kernel logs show the selected route more clearly than the AudioTrack API does: the HAL opened the stream as MAT, assigned `Decoder_93` the MM input source and `DVB_MAT` format, opened compressed decoder device `C0D14`, and started decoder 2. The vendor topology connected `SrcDecoder_93` through an `Encoder` to `EarcOutput`. Thus the test entered the TV's MAT decoder/re-encoder pipeline; it did **not** establish direct delivery to an eARC non-PCM DMA endpoint. This agrees with `/proc/asound/pcm`, which still has no separately named `EARC NONPCM Playback` endpoint.
+
+The decoder did not produce observable playback progress before the app queue stopped accepting writes: `head=0`, timestamp frame position `0`, followed by `No write progress for 3s`. At teardown the HAL reported `has_atmos_stream:0`; this is a teardown status, not a frame-by-frame readback. The evidence points to a stalled MAT decoder/input path, but does not distinguish invalid or unsupported MAT framing from a decoder/clock/configuration issue. The first sync bytes passed the app's superficial check; the entire stream was not independently validated against a documented Android/TCL MAT input contract. The next useful step is read-only tracing/comparison of the existing MAT and working JOC decoder input setup and write path, rather than replaying another speculative byte layout.

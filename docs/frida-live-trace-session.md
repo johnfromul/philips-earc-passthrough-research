@@ -34,25 +34,23 @@ Kprobes on `HAL_DEC_R2_Set_SHM_PARAM(a=group,b=index,c=value)`, `HAL_SND_R2_Set_
 
 ## 3. Interpretation
 
-The two sources diverge at the **routing** level, confirmed live:
-- **HDMI** → `DigitalTx_ApplySetting` bypass/apply path → original MAT bitstream (with Atmos EVO) passed to eARC →
-  `isAtmos=1`.
-- **Internal (MM)** → no `DigitalTx_ApplySetting`; the DSP decodes + re-encodes MAT with `MatMlpOnly=1` (set live by
-  the topology) → objects dropped → `isAtmos=0`.
+The two sources diverge at the **routing** level, confirmed live. HDMI uses `DigitalTx_ApplySetting` and the Atmos
+positive control reaches the sink. Internal playback does not use that bypass; TrueHD is decoded and re-encapsulated,
+the HAL callback reports `atmosStream(0)`, and the sink reports Dolby Surround. The raw DSP flag and transmitted MAT
+object metadata were not captured, so the precise point of Atmos loss is unknown.
 
-Candidate levers, by value (names not in BTF — likely `#define`d, so unlabeled):
-- **DEC group `0xda` (0→1)** and **`0x16` (→1)**: the cleanest boolean differences on the decode/apply side.
-- Structurally: the presence of `DigitalTx_ApplySetting` + the `source==MM` branch in `DecoderPipelineManager::create`.
+The topology sets `MatMlpOnly=1` for the internal path, but the live `1→0` override had no effect, so this value is not
+the causal lever. The initial `0xda`/`0x16` source differences were only candidates: the later SHM/BTF analysis resolves
+`0xda` as an HDMI-RX delay artifact, and no Atmos-control meaning or causal effect was established for `0x16`. No
+candidate DSP parameter was written.
 
-## 4. Not yet done (needs an intervention — gated on backups)
+## 4. Initial intervention plan (superseded by results below)
 
-No causation test was run (no writes). To prove a lever, the reversible options, in order of safety:
-1. **Frida override (userspace, fully reversible):** in `libaudiopipelinetopology.so` `DecoderPipelineManager::create`,
-   force the `MatMlpOnly`/source branch so the pipeline is built as non-MM; observe `0xda`, `IsAtmosStream`, soundbar.
-2. **kprobe/DSP-param override (kernel):** force DEC group `0xda=1` (and `0x16=1`) during MM playback and observe the
-   soundbar. Higher risk (kernel/DSP write); do only with partition backups and fail-closed.
-
-Preconditions before any write: confirmed partition backups (plan step 0), soundbar volume low, revert-on-anomaly.
+At this point no causation test had run. The original plan was to test the HAL `MatMlpOnly` value with a reversible
+Frida override, then consider a kernel/DSP-param write only if a specific candidate survived observation. The Frida
+test is recorded in §5 and found `MatMlpOnly` inert. No targeted DSP-param write was made; the later SHM namespace
+comparison found no exposed Atmos toggle, so that write is not indicated by current evidence. Partition backups were
+completed before the rooted session.
 
 ## Repro / environment
 frida-server pushed to `/data/local/tmp/frida-server-17` (ARM32, run via `su`). Host frida 17.27.4 on Python 3.13.
@@ -67,10 +65,10 @@ With partition backups secured (roadmap step 0), forced `MatMlpOnly: 1→0` at t
 still never fired for the internal path (0×). The `0xda` DEC param proved noisy (two indices, transient 0/1 values),
 so it is **not** a clean static flag either.
 
-**Conclusion:** the HAL `MatMlpOnly` is confirmed live to be **inert** — not the lever. The real control is inside the
-DSP's TrueHD→MAT encapsulation (`mat_enc`), set via a `dolby_param` SHM field. This contrast is MM-only (HDMI passes
-the original MAT through, so it never runs `mat_enc`), so it can't be isolated by an MM-vs-HDMI diff — it needs the
-`dolby_param` struct field that enables EVO/Atmos object carriage, identified from the module directly.
+**Conclusion:** the HAL `MatMlpOnly` is confirmed live to be **inert** — not the lever. This test alone did not identify
+the control responsible for the internal result. The earlier hypothesis that a `dolby_param` SHM field enables
+EVO/Atmos object carriage was not established; the later full MM-vs-HDMI namespace comparison found no exposed Atmos
+toggle (see §7–8).
 
 ## 6. DSP param naming — blocked by split BTF; and a scope caveat
 
@@ -82,19 +80,18 @@ The module's BTF names an `R2_SHM_PARAM_PCMR_ATMOS_ENCODE_ENABLE` (and `..._PCMR
   disassembly of the setter's call sites.
 - **Scope caveat:** `PCMR` = PCM *renderer* — these atmos params most likely drive the internal **DAP speaker
   virtualizer** atmos (the `+0x438` DAP-enable seen statically), not the eARC **MAT object carriage**. No
-  `MAT_ENC`-scoped atmos/EVO *enable* param was found. This is consistent with the internal TrueHD→eARC path being
-  MAT **encapsulation that does not embed the Atmos EVO**, with no stock switch exposed to change it.
+  `MAT_ENC`-scoped atmos/EVO *enable* param was found. This supports the conclusion that no exposed switch was found;
+  it does not establish whether the internal output MAT contains object metadata.
 
 ## Session conclusion
 
-Live, on the rooted device, this session **ruled out** the long-standing leading hypothesis (HAL `MatMlpOnly`) and
-confirmed the mechanism is a **DSP-firmware behavior**: internal TrueHD is MAT-encapsulated without the Atmos object
-layer, while HDMI passes the original object-bearing MAT through (`DigitalTx_ApplySetting` bypass). No single
-userspace or kernel-param lever has been shown to flip it, and the deciding logic lives in the closed audio-DSP
-firmware. A clean patch is therefore **not demonstrated to exist** on V670 via userspace/kernel instrumentation.
-Remaining avenues (higher effort, uncertain payoff): resolve the SHM param ids via base BTF + AArch64 disasm of the
-`Set_SHM_PARAM` dispatch and test a targeted write; or pursue the DSP firmware itself. The working Atmos route from
-internal apps remains **E-AC3 / DD+ JOC** (`isAtmos=1`), which is unaffected by this limitation.
+Live, on the rooted device, this session **ruled out** the long-standing leading hypothesis (HAL `MatMlpOnly`). The
+observed path split is that HDMI input takes the hardware MAT bypass and preserves the Atmos positive control, while
+internal TrueHD is decoded and re-encapsulated and the sink reports Dolby Surround. The internal MLP callback reports
+`atmosStream(0)`, but raw DSP status and transmitted MAT object metadata were not independently read. No userspace or
+kernel-param lever has been shown to flip the result, and the relevant processing runs in the closed audio-DSP path.
+The exact point of metadata loss and the DSP firmware's patchability remain unresolved. The working Atmos route from
+internal apps remains **E-AC3 / DD+ JOC** (`isAtmos=1`).
 
 ## 7. Option B: DSP SHM param namespace resolved (split BTF)
 
@@ -142,72 +139,75 @@ none is an object/Atmos enable:
 | 0x62 | `DDP_ENCODE_EN` | **4** | **4** (same) |
 | 0x79 | `OMX_ATMOS_VALID` | **not written** | **not written** |
 
-**Verdict:** there is **no exposed DSP SHM parameter** (nor userspace/kernel flag) that flips Atmos for the internal
-path. The Atmos difference is purely **routing**: HDMI passes the original object-bearing MAT bitstream through
-(bypass via `HAL_AUDIO_DigitalTx_ApplySetting`); internal audio is MAT-**encapsulated** by the DSP without the object
-(EVO) layer, and the stock firmware exposes no control to include it. The atmos-named params that exist
-(`OMX_ATMOS_VALID`, `PCMR_DDPENC_ATMOS_LOCK`, …) are not driven on either path.
+**Verdict:** this comparison found **no exposed DSP SHM parameter** (nor userspace/kernel flag) that flips Atmos for the
+internal path. HDMI input takes the original object-bearing MAT bitstream through the hardware bypass
+(`HAL_AUDIO_DigitalTx_ApplySetting`) and is the positive control. Internal TrueHD is decoded and re-encapsulated; the
+HAL callback reports `atmosStream(0)` for the internal MLP session. We did not read back the raw DSP Atmos flag or the
+transmitted MAT object metadata, so the exact point where Atmos status is lost is not established. The atmos-named
+params that exist (`OMX_ATMOS_VALID`, `PCMR_DDPENC_ATMOS_LOCK`, …) are not driven on either path.
 
-## Final conclusion (V670, rooted, exhaustive)
+## Final conclusion (V670, rooted, current evidence)
 
-Across userspace (Frida), kernel (kprobes), and the full DSP param namespace (split-BTF resolved), **no lever for
-internal-app TrueHD Atmos exists on V670**. `MatMlpOnly` is inert (proven by live override).
+Across userspace (Frida), kernel (kprobes), and the inspected DSP param namespace (split-BTF resolved), **no exposed
+control for internal-app TrueHD Atmos has been found on V670**. `MatMlpOnly` is inert (proven by live override).
 
 **Correction on verified boot:** the earlier roadmap snapshot (pre-root, 2026-11-19) reported green/locked. Live on the
 rooted device it is `vbmeta.device_state=unlocked`, `verifiedbootstate=orange`, `veritymode=disabled` — AVB is **off**,
-so partitions/firmware **are** modifiable. That does not yield a fix: there is no config/param lever (proven), and the
-only remaining surface is the **audio-DSP firmware code** (`/vendor/firmware/dsp.bin` 53 KB, opaque/compressed, unknown
-DSP ISA, no strings; `/vendor/firmware/DOLBY.bin` is gain/LUT **data**, not config; the MS12-on-DSP code in `armfw`
-MULTIBIN is likewise opaque). Patching that would require reverse-engineering an unknown, likely integrity-checked DSP
-blob to add an object-carrying MAT path that may not exist in it — impractical, uncertain payoff. So the blocker is not
-verified boot (it's disabled) but the **opaque closed DSP firmware** with no exposed control at any reachable layer.
+so partitions/firmware **are** modifiable. That does not yield a fix: no config/param lever was found, and the audio-DSP
+firmware remains opaque (`/vendor/firmware/dsp.bin` is 53 KB and has no identified ISA; `/vendor/firmware/DOLBY.bin` is
+gain/LUT data, not config). The stock OTA `armfw.img` is a 92 KB MULTIBIN container with an `ATFW` entry; its role as
+the Dolby TrueHD/MAT decoder has not been demonstrated. The loader's segment comparison is a readback check, and a
+separate conditional TEE call is present; TEE authentication of this DSP image remains unproven. The closed DSP may
+still be the only possible patch surface, but whether it is patchable and whether an object-carrying MAT path exists are
+unresolved.
 
-**A clean patch is not practically achievable on this firmware.** The working internal-Atmos route remains
-**E-AC3 / DD+ JOC** (`isAtmos=1`). No device modifications were persisted this session (Frida/kprobes are volatile and
-removed; partition backups taken as a precaution were never needed).
+**No working patch or internal-app TrueHD Atmos route has been demonstrated.** The working internal Atmos route remains
+**E-AC3 / DD+ JOC** (`isAtmos=1`). Frida/kprobes were volatile and removed; partition backups were retained.
 
-## 9. DSP firmware is TEE/Secure-Engine authenticated — modified firmware won't load
+## 9. DSP loader readback and conditional TEE integration — authentication unresolved
 
-Checked whether a modified audio-DSP firmware would even load (the last practical gate), via static analysis of the
-pulled kernel modules:
+Static analysis of the stock kernel module shows:
 - `mtk-tvsnd-dsp-loader.ko` (12 KB shim) just sets up DSP memory (`MApi_AUDIO_offload_SetDspBaseAddr`,
   `WritePreInitTable`); no verification itself.
-- `mtk-tvsnd-soc.ko` loads the firmware with `request_firmware_direct` and hands it through the **TEE**:
-  `ST_AUDIO_TEE_FIRMWARE_INFO`, `ST_AUDIO_TEE_MIXED_FIRMWARE_INFO`, plus **Secure Engine** paths (`DSP_SE`,
-  `se_test_output_checksum`). The firmware is **LZMA-compressed** (`E_SYS_QUERY_LZMA_SELECT_SUPPORTED`), explaining the
-  opaque `dsp.bin`. (The `AUDIO_DOLBY_*_Cert` strings are Dolby/DTS **licensing** certs, not firmware signatures.)
+- `mtk-tvsnd-soc.ko` has a conditional `MDrv_AUDIO_TEE_R_Send_Cmd` call with command `0x20` in the DSP load path.
+  The separately named `HAL_AUDSP_DspVerifySegmentCode` reads back DSP program-memory bytes and compares them with
+  the uploaded input. That is a content readback check, not a cryptographic signature check.
+- The actual C9K boot's selection of the conditional branch, the meaning of command `0x20`, and any secure-world
+  policy over this specific DSP image are unknown. Names such as `DSP_SE` and `se_test_output_checksum` do not establish
+  signature enforcement. The `AUDIO_DOLBY_*_Cert` strings identify licensing-related data, not this loader's policy.
 
-**Conclusion:** the audio-DSP firmware is authenticated in the **TEE/Secure Engine**, which is **independent of AVB**.
-So even with the bootloader unlocked and verity disabled, a modified `dsp.bin`/`armfw` would fail secure-world
-authentication and not run. This **definitively closes** the DSP-firmware-patch avenue: the limitation is not reachable
-at any layer — userspace/kernel levers are inert/absent (proven), there is no config/param lever (proven), and the DSP
-firmware is TEE-gated. **No practical path to internal-app TrueHD Atmos exists on V670.** Working route stays E-AC3/DD+ JOC.
+**Conclusion:** TEE integration and segment readback are evidenced; mandatory cryptographic authentication of the
+TrueHD/MAT DSP image is not. It is not established whether modified DSP bytes would load. See the detailed
+[offline DSP loader audit](dsp-loader-offline-audit-2026-11-23.md). No working internal-app TrueHD Atmos path or patch
+has been demonstrated; the internal E-AC3/DD+ JOC route still works.
 
-## 10. IEC61937/MAT passthrough experiment — the blocker is ARC-vs-eARC routing, not the gates
+## 10. MAT-tagged AudioTrack fed IEC61937 bursts — silent on ARC
 
-Ran the app's `MAT encoding + full IEC burst 48k` test (feeds pre-built `truehd.iec`) with a Frida hook ready to open
-the HAL IEC gate. Results:
-- App log: `enc=19` (ENCODING_IEC61937), `direct=true directSupport=0x3` — the IEC61937 direct track **was allowed and
-  built** (session 225), routed to `type=10` (HDMI_ARC). The HAL `utils_isPassthroughSupported` hook **never fired** —
-  so the **gates do not block** this path (corrects the roadmap's "blocked by client + 2 HAL gates").
-- AudioFlinger: a real **`AUDIO_FORMAT_MAT` (0x24) OFFLOAD** output opened (`DIRECT|COMPRESS_OFFLOAD|GAPLESS_OFFLOAD`),
-  audio patch to **HDMI_ARC**, **all 61.5 M frames written**. But the app's playback `head=0` throughout → **silent**,
-  soundbar briefly showed "Dolby Surround".
-- **Root cause:** the output routed to **`HDMI_ARC`** (legacy ARC; profiles top out at `E_AC3_JOC` — no MAT/TrueHD),
-  not **`HDMI_EARC`** (whose policy profiles DO include `DOLBY_TRUEHD 0x0e` and `MAT 0x24`). MAT cannot be transmitted
-  over ARC, so `head=0`/silence is expected. `ro.feature.hdmi_earc=false`; only `HDMI_ARC` is an available output,
-  although `earc_enabled=2` / `tcl_app_settings_eARC_mode=true` and the eARC HW link carries TrueHD for HDMI bypass.
+The tested app mode was `MAT encoding + full IEC burst 48k`. Source inspection of `ProbeMode.MAT_IEC_48` shows it
+declared Android encoding `19` while reading `truehd.iec` through `FrameReader.Kind.IEC`. Android defines encoding 19
+as `ENCODING_DOLBY_MAT`, and encoding 13 as `ENCODING_IEC61937` ([AudioFormat API](https://developer.android.com/reference/android/media/AudioFormat)).
+The payload was therefore IEC61937 burst data submitted on a MAT-tagged track; it was **not a valid test of the app's
+encoding-13 IEC61937 path**. The declared encoding and supplied framing do not match, so the silence cannot be
+attributed to a single cause from this run.
 
-**Significance:** the MAT path is a **passthrough** (app supplies the MAT; DSP transmits it) — unlike the
-decode→re-encapsulate path that strips objects — so if an object-bearing MAT reached **eARC**, Atmos could survive.
-The limitation reduces to the Android audio framework confining internal apps to the **ARC** output (JOC max) while the
-full-bandwidth **eARC** path (MAT/TrueHD) is used only by the HW HDMI bypass.
+Observed for this run:
+- App log: `enc=19`, `direct=true directSupport=0x3`; track creation succeeded (session 225), routed to `type=10`
+  (`HDMI_ARC`). The `utils_isPassthroughSupported` Frida hook did not fire. Because the track was tagged MAT, this does
+  not establish whether the IEC61937 client/HAL gates block encoding 13.
+- AudioFlinger opened `AUDIO_FORMAT_MAT` (`0x24`) with `DIRECT|COMPRESS_OFFLOAD|GAPLESS_OFFLOAD`, an audio patch to
+  HDMI_ARC, and the log reported all 61.5 MB written. Playback `head=0` throughout indicates no rendered audio;
+  the soundbar briefly showed “Dolby Surround”. The MAT label in AudioFlinger is consistent with the declared
+  encoding, not proof that the supplied IEC bursts formed valid MAT frames.
+- HDMI_ARC was the selected output and its profiles did not include MAT/TrueHD. This is a relevant route limitation,
+  but the framing/encoding mismatch prevents treating it as the established cause of silence.
+
+The app also has distinct modes that declare IEC61937 encoding 13; the historical Frida result above did not exercise
+them. The true IEC61937 AudioTrack/HAL gate behavior and a correctly framed MAT input remain unproven.
 
 **Tried:** `resetprop ro.feature.hdmi_earc true` + `audioserver` restart — did **not** expose `HDMI_EARC` (device
 availability is set earlier, by the vendor eARC/HDMI service at init). Reverted; device left clean.
-**Open next step:** set the flag at boot via a Magisk `system.prop` module and reboot, then retest — uncertain (the flag
-may not change HAL behavior, and eARC output for the mixer path may be unsupported), but the most promising remaining
-lead, since `head=0` on ARC is expected and eARC routing might actually render the MAT.
+**Next step at that time (completed in §11):** set the flag at boot via a Magisk `system.prop` module and reboot, then
+retest. The outcome is recorded below.
 
 ## 11. eARC output enabled via Magisk flag — sound over eARC, but internal TrueHD still decoded (no Atmos)
 
@@ -216,17 +216,20 @@ Set `ro.feature.hdmi_earc=true` via a Magisk `system.prop` module and rebooted. 
   routes to eARC (`0x40001`); and the `HDMI_EARC` output policy now advertises **DTS_HD (0xC), MAT (0x24) and
   DOLBY_TRUEHD (0x0e)** profiles (ARC had only up to E-AC3-JOC). The runtime `resetprop` had failed; the boot-time flag
   succeeded (device availability is fixed at init by the vendor eARC service).
-- **MAT test (`truehd.iec`, enc=19):** now routes to eARC (`type=29`), all 61.5 M frames written, but **`head=0`** still
-  → silent. The DEC decode params fire (same as decode path); the MAT framing isn't rendered.
+- **Same MAT-tagged/IEC-burst probe (`truehd.iec`, enc=19):** in that earlier boot session it routed to eARC (`type=29`),
+  all 61.5 MB were reported written, but `head=0` and it remained silent. Since the track declared MAT while
+  carrying IEC61937 bursts, this does not validate either a correct MAT stream or the encoding-13 IEC61937 route.
 - **TrueHD RAW (`truehd.thd`, enc=14 DOLBY_TRUEHD):** over eARC it **renders** (head advanced to 910320, audible) —
-  but `applyset`/bypass never fires, so it is **decoded + re-encapsulated** (objects stripped) → **still Dolby Surround**,
-  exactly as over ARC.
+  but `applyset`/bypass never fires, so it is **decoded + re-encapsulated**. The sink reports **Dolby Surround**, not
+  Atmos; the MAT object's metadata was not independently captured.
 
 **Conclusion:** enabling eARC output (a real, useful change — unlocks eARC-class formats and higher-quality output for
-internal apps) does **not** yield TrueHD Atmos. Internal compressed audio is always **decoded** by the DSP; the only
-passthrough (`HAL_AUDIO_DigitalTx_ApplySetting` bypass) is gated to the HDMI hardware source. The platform passes DD+/
-E-AC3 through (so **JOC Atmos works**) but **decodes TrueHD** into object-stripped MAT. There is no internal TrueHD/MAT
-passthrough path, so internal-app TrueHD Atmos remains unreachable even with eARC enabled and the IEC/MAT gates open.
+internal apps) does **not** yield TrueHD Atmos. Internal TrueHD is decoded by the DSP and re-encapsulated as MAT; in our
+test the sink reports Dolby Surround rather than Atmos. The raw transmitted object metadata was not independently
+measured. The only observed TrueHD passthrough (`HAL_AUDIO_DigitalTx_ApplySetting` bypass) is gated to the HDMI
+hardware source. The platform passes DD+/E-AC3 through (so **JOC Atmos works**); no internal TrueHD/MAT passthrough
+path has been demonstrated. The prior enc=19 experiment is not evidence that a true IEC61937 AudioTrack was accepted.
 
-The Magisk `earc_output_test` module (forces eARC output) is a reasonable **keep** on its own merits (eARC > ARC), but
-it is not required and does not deliver Atmos; remove it to revert to stock ARC routing.
+At the time of section 11, the Magisk `earc_output_test` module exposed HDMI_EARC, but it did not make the MAT-tagged
+probe render. A later live inventory is recorded in [earc-endpoint-and-policy](earc-endpoint-and-policy.md); do not
+assume that earlier boot configuration is still active.
