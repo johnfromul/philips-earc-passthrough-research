@@ -16,18 +16,21 @@ The previous roadmap (a chronological log) is preserved in git history before th
 | MKV TrueHD prop | `vendor.mtk.mkv.support.truehd` unset; `ro.feature.media_dolby_truehd=false` |
 | Policy | eARC profiles advertise TRUEHD (0x0e000000) and MAT (0x24000000); no IEC61937 |
 
-## Current device state (2026-11-23 UART/Magisk session)
+## Current device state (2026-11-23 live Wireless ADB check)
 
 | Item | Current observation |
 |---|---|
-| AVB | `avb set-devicestate 0` completed; environment save reported `OK` |
-| dm-verity | Disabled with `avb set-verity disable`; MMC write reported `OK` |
-| Boot image | Magisk v31.1 image written to active slot `boot_b`; U-Boot reported both MMC writes `OK` |
-| Android | Kernel, ramdisk, and device tree loaded `OK`; owner completed the initial setup after the unlock reset |
-| ADB | Wireless debugging re-enabled after Magisk's first-run restart; ADB is connected over the new TLS port |
-| Root / SELinux | Magisk 31.1 is active; `/debug_ramdisk/su -c id` returns `Permission denied`, so UID 0 is unverified. SELinux is `Enforcing` |
+| AVB | Device state is unlocked/orange; AVB verification is off |
+| dm-verity | Disabled |
+| Boot image | Magisk v31.1 patched image is installed on active slot `boot_b` |
+| Android | Boot completed; owner completed setup after the unlock reset |
+| ADB / root | Wireless ADB connected; `su -c id` confirms UID 0, Magisk context; SELinux remains `Enforcing` |
+| eARC feature | Recreated reversible `earc_output_test` property module; `ro.feature.hdmi_earc=true` after reboot |
+| Active output | AudioPolicy lists Speaker and HDMI EARC as available; eARC profiles include MAT and Dolby TrueHD |
+| ALSA | Card 0 is `mtktvsndcard`; PCM D9 is `tvsnd-common-pcm` (6 playback substreams); compressed nodes D12–D16 exist. Even with eARC enabled, no PCM is named `EARC NONPCM Playback` |
+| Loaded audio kernel modules | `mtk_earc`, `mtk_tvsnd_machine`, `mtk_tvsnd_platform`, `mtk_tvsnd_soc`, `mtk_tvsnd_dsp_loader` are loaded |
 
-The user completed setup, accepted Magisk's first-run restart, and re-enabled Wireless debugging. Enable or approve Magisk Superuser access for ADB/`shell`, then continue with the [UART root attempt log](c9k-v670-uart-root-attempt-2026-11-23.md). The 2026-11-19 table above is a pre-unlock baseline, not the current boot state.
+The 2026-11-19 table above is a pre-unlock baseline, not the current boot state. The 2026-11-23 UART/Magisk and reversible device changes are recorded in [device changes](device-changes-20261123.md) and the [UART root attempt log](c9k-v670-uart-root-attempt-2026-11-23.md).
 
 Static claims re-verified on binaries pulled from the live TV (`private/verify_20261119/`):
 - `libaudioclient.so` contains the TCL filter `... is not /system/bin/mediaserver, remove support direct IEC61937`.
@@ -41,27 +44,26 @@ Static claims re-verified on binaries pulled from the live TV (`private/verify_2
 |---|---|---|
 | E-AC3 JOC from app, full A/V tunnel | **Atmos** on soundbar, DEC(2) isAtmos=1 | [joc-positive-control](joc-positive-control.md) |
 | TrueHD over HDMI from PC | **Atmos**, DEC(0) HDMI_IN isAtmos=1 | [hdmi-comparison](hdmi-comparison.md) |
-| TrueHD raw from app, tunnel + 16/24-AU grouping | Clean audio, **Dolby Surround**, isAtmos=0 (two samples) | [minirama-retest](minirama-retest.md) |
-| MAT payloads (IEC/LE/BE) from app | Silence / stall: input contract unknown, stop trying variants | [mat-tunnel-results](mat-tunnel-results.md) |
-| IEC61937 from app | Blocked in client (process check) and HAL (2 format gates) | [custom-firmware-iec61937](custom-firmware-iec61937.md) |
+| TrueHD raw from app | Audible after decode/re-encapsulation; sink reports **Dolby Surround**, not Atmos; callback reports `atmosStream(0)` | [frida-live-trace-session](frida-live-trace-session.md) |
+| MAT AudioTrack (`enc=19`) | 48 kHz/7.1 MAT track opened and reported eARC route; 286,720 bytes accepted, then write stalled; playback head stayed 0. No wire transmission or Atmos preservation established | [investigation](investigation.md), [endpoint inventory](earc-endpoint-and-policy.md) |
+| IEC61937 AudioTrack (`enc=13`) | On current eARC, 192 kHz/7.1 reports `direct=false` and fails track construction; no data written. No successful IEC route established | [investigation](investigation.md), [IEC client experiment](iec-client-experiment.md) |
+| eARC non-PCM ALSA endpoint | HAL lookup searches `/proc/asound/pcm`; even with eARC enabled, no matching endpoint is registered. D9 and compressed D12–D16 remain unmapped | [earc-endpoint-and-policy](earc-endpoint-and-policy.md) |
 | TCL Media Center MKV | TrueHD track dropped by extractor property gate; shell setprop denied by SELinux | [native-extractor-stage4](native-extractor-stage4.md) |
 | Public MediaCodec TrueHD/MAT decoder | None present | [runtime-codecs-and-bypass](runtime-codecs-and-bypass.md) |
 | Sample framing | Source starts at major sync, timing fine; not the cause | [truehd-parser-alignment](truehd-parser-alignment.md) |
 
-**Conclusion:** without root/firmware changes there is no remaining path on V670. The data reaches the DSP; the Atmos layer is lost on the internal (MM) source. Leading hypothesis: `MatMlpOnly=1` for MM source makes the decoder use only the MLP base (non-Atmos) substream. Unproven — and see the caveat below.
-
-**Mechanism identified (2026-11-20, live MS12 pull, [ms12-mat-transcode-trace](ms12-mat-transcode-trace.md)):** the internal (MM) path is a TrueHD→MAT **transcode** inside `libms12v27.so`. The TrueHD decoder *does* extract the Atmos object metadata (EVO/OAMD: `thd_evo_parse_extra_data`), but the MAT re-encoder carries Atmos only when its EVO-present flag (encoder state `+0x212c`, read by `mat_enc_is_evo_present`) is set, and MS12 opens the MM transcode in a **channel-based (MLP-only) `dec_mode`** (`transcode_open`/`mat_enc_is_channel_based`), so the objects the decoder extracted are not re-injected → `isAtmos=0`. HDMI bypasses the transcode (objects intact → `isAtmos=1`); JOC uses a separate decoder path that preserves Atmos. The HAL `MatMlpOnly` (`+0x348`, write-only in `libmi3_audio_hal.so`, see [mat-mlp-consumer-trace](mat-mlp-consumer-trace.md)) is the HAL's *name* for this MS12 mode, not the lever itself. **Conclusion: not a decode/codec failure but a source-bound policy to transcode internal TrueHD in MLP-only mode.** A runtime hook is only useful if a single value (HAL op-mode arg, MS12 `dec_mode`, or DSP `dolby_param`/`MAT_HDMI_bypass`) flips it — trace that before spending root budget.
+**Current conclusion:** no working internal-app TrueHD Atmos route or patch has been found. Forcing `MatMlpOnly` from `1→0` live changed nothing, and the inspected MM-vs-HDMI DSP SHM namespace exposes no Atmos toggle. HDMI input takes a hardware MAT bypass and preserves the Atmos positive control. Internal TrueHD is decoded/re-encapsulated and the sink reports Dolby Surround; the callback reports `atmosStream(0)`, but raw DSP status and transmitted MAT object metadata were not independently measured. The correctly tagged MAT AudioTrack routes to eARC, but its payload write stalled with playback head zero; wire delivery and Atmos preservation remain unproven. See [live trace](frida-live-trace-session.md), [DSP candidate audit](dsp-candidate-audit.md), [live investigation](investigation.md#rooted-earc-endpoint-retest-2026-11-23), and [offline loader audit](dsp-loader-offline-audit-2026-11-23.md).
 
 ## Historical GhostLock/root plan (2026-11-22; updated by the UART attempt log)
 
-The backup, GhostLock carrier, and runtime-hook steps below were a pre-unlock plan. The 2026-11-23 Magisk boot modification is recorded separately above; a full partition backup, GhostLock run, root verification, and audio modification have not been completed.
+The numbered plan below is historical. Since it was written, the partition backup was completed, Magisk root was obtained, the eARC output flag was applied through a reversible module, and the live `MatMlpOnly`/DSP-parameter investigation was completed. No DSP firmware or TEE change was made. See [device changes](device-changes-20261123.md) and the current conclusion above.
 
 0. **Backup first.** ✅ Done 2026-11-23: 18 critical partitions (slot `_b`) dumped to USB `c9k_backup_20261123/` with SHA-256 manifest (host copy `private/backups_20261123/manifest.txt`): boot/vendor_boot/vbmeta/dtbo/tclconfig/tvconfig/oem/optee/armfw/mboot/misc/metadata/config/factory/impdata/persist/mtk_persist/certificate. `super` (4.5 GB) exceeds the USB's FAT32 4 GB file limit — not dumped (reconstructable from the stock OTA; not touched by the audio work); split-dump if ever needed. Keep the original V670 OTA ZIP (SHA-256 `3d2fdf53…`) as the stock baseline.
 1. **GhostLock V670 port**: an analysis-only profile is registered in the local source copy and the live kernel selected it through a standalone read-only ARM32 inspector (`primitive_arming=REFUSED`). The stock image's embedded BTF confirms the V670 task, cred, waiter, page, and kmem_cache layouts; `/proc/slabinfo` confirms the 1024-byte mm_struct cache. Live `/proc/zoneinfo` confirms the 3-GiB physical RAM extent, and exact V670 ELF analysis fixes the futex hash table at 1024 entries; the scanner now uses that value and rejects ambiguous candidates, but the V670 route has not exercised it or tied it to a known target page. Static compat MCAST stack-copy geometry matches the stale waiter placement, but the live carrier is not validated. `kernel_phys_load=0x26000000` and runtime SLUB values remain unconfirmed; PFN bits are masked, so the target reclaim witness is still unavailable to the shell. See [GhostLock V670 profile preflight](ghostlock-v670-profile-preflight.md). The V643 package and official arm64-only APK do not match this V670 TV; live carrier execution, reclaim sequence, and compatible root handoff remain unresolved.
-2. **Runtime hook — corrected target** (see [ms12-mat-transcode-trace](ms12-mat-transcode-trace.md), [dsp-dolby-param-map](dsp-dolby-param-map.md)): do **not** hook `DecoderCommon.SetMatMlpOnly` — write-only, and the discrete MAT APAF filters are stubs. The DSP exposes an explicit **`ATMOS_ENCODE_ENABLE`** parameter (distinct from the `MAT_HDMI_bypass` HDMI gate) — the prime suspect lever for object carriage on the MM re-encode path. Plan: (a) with root+Frida, trace `HAL_DEC_R2_Set_SHM_PARAM` (0x90c60) / `HAL_AUDIO_DigitalTx_ApplySetting` logging `ATMOS_ENCODE_ENABLE`/`DOLBY_ATMOS_ENABLE`/`MAT_HDMI_bypass` for MM-TrueHD vs HDMI-TrueHD; (b) cross-check `_MI_APAF_FILTER_MS12V2_FLAP_SetParameter` (0x13dbf8) + MS12 encoder `+0x212c`; (c) if the param differs by source, set it on for MM, fail-closed, and verify `isAtmos`. Retarget `tools/hook_mat_mlp.js`. Live GB AU04 `mtk-tvsnd-soc.ko` is byte-identical to the analyzed stock module (confirmed on-device).
+2. **Runtime hook / DSP params — completed read-only.** `MatMlpOnly` was forced `1→0` and had no effect. The full inspected DSP SHM namespace diff found no exposed Atmos toggle; no targeted DSP write was made. See [live trace](frida-live-trace-session.md) and [DSP parameter map](dsp-dolby-param-map.md).
 3. **Extractor gate**: `setprop vendor.mtk.mkv.support.truehd true`, then MKV in TCL Media Center. Cheap; shows whether the native player route yields Atmos.
-4. Only if 2 fails: IEC61937 passthrough (client filter + HAL `utils_isPassthroughSupported` + `utils_earc_set_decoder_format` + eARC-only policy profile). Offline client prototype exists: [iec-client-experiment](iec-client-experiment.md), [earc-endpoint-and-policy](earc-endpoint-and-policy.md), [iec-mat-carrier-reference](iec-mat-carrier-reference.md).
-5. Persist whatever works (Magisk module / overlay), then regression: PCM, E-AC3 JOC, HDMI Atmos, CEC, standby, OTA behavior.
+4. **IEC/MAT route — partial evidence corrected.** The old enc=19 test used IEC bursts under a MAT encoding, so neither true IEC61937 (encoding 13) nor a valid MAT contract has been proven. See [live trace](frida-live-trace-session.md).
+5. **eARC output flag — re-enabled for endpoint investigation.** The property module is active again and AudioPolicy exposes HDMI EARC, but ALSA still has no named EARC non-PCM endpoint. See [device changes](device-changes-20261123.md) and [endpoint inventory](earc-endpoint-and-policy.md).
 
 ## Debloat (no root needed, reversible)
 
@@ -78,4 +80,4 @@ Findings: [privacy-manifest-results](privacy-manifest-results.md), [privacy-inve
 - [Audio kernel compatibility preflight](audio-kernel-compatibility-preflight.md): six stock modules have modversions/BTF, no standard appended module signature marker; dependencies documented. Run the offline boot audit tool to determine selected config keys. Latest owner preflight still cannot confirm Virtual A/B merge state. No live kernel identity or load compatibility established.
 - [Virtual HDMI audio source](virtual-hdmi-audio-source.md) remains a conditional fallback only if the preferred MM/HAL route fails and a real memory-fed compressed bypass transport is established.
 
-- [Stock audio Device Tree topology](audio-device-tree-topology.md): verified driver-side OF identifiers; collect candidate DT nodes from existing hash-verified vendor_boot/dtbo images using `python tools/inspect_stock_audio_dt.py`. Actual DT trees and selected overlay remain unverified; no device changes.
+- [DPlayback driver audit](nonpcm-dplayback-driver-audit-2026-11-24.md) confirms that active overlay 22 disables the alternate ASoC stack on V670. The stock `EARC-NONPCM` DAI provides a reference for an ALSA-to-DMA7 path. Live MMIO claims block parallel bring-up of the alternate SoC provider, and its TX window differs from the C9K's active eARC TX. The open question is how to route a host-owned DMA ring to the active TX. See also the [stock audio Device Tree topology](audio-device-tree-topology.md).

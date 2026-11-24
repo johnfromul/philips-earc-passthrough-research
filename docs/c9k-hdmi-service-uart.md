@@ -13,7 +13,7 @@ Device: TCL 65C9K, chassis T653T01, product `G08_4K_GB`, MT5896, Android 14, fir
 
 ## Current device state
 
-AVB was unlocked, dm-verity disabled, and the Magisk v31.1 patched image was written to `boot_b`. The user completed Android setup, installed Magisk Manager, accepted its first-run restart, and re-enabled Wireless debugging. ADB is connected; SELinux is `Enforcing`, but `/debug_ramdisk/su -c id` returns `Permission denied`, so UID 0 is not yet confirmed. This is a separate, persistent Magisk route; the V670 GhostLock profile remains `analysis_only`.
+AVB was unlocked, dm-verity disabled, and the Magisk v31.1 patched image was written to `boot_b`. The user completed Android setup, installed Magisk Manager, accepted its first-run restart, and re-enabled Wireless debugging. The initial root check returned `Permission denied`; a later Wireless ADB follow-up confirmed UID 0 with `su -c id`, while SELinux remained `Enforcing`. Current live audio/eARC state is in the [endpoint inventory](earc-endpoint-and-policy.md). This is a separate, persistent Magisk route; the V670 GhostLock profile remains `analysis_only`.
 
 The audio investigations dated 2026-11-19 describe the pre-unlock baseline. They are not measurements of the current boot state. No audio HAL or IEC61937 modification has been made.
 

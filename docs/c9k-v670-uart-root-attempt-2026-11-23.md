@@ -104,9 +104,13 @@ Current facts:
 - The exact stock boot image is retained on the same USB stick and locally. The live recovery command syntax is known, but a stock reflash has not been tested. Do not relock while the patched image is installed.
 - This Magisk route is separate from GhostLock. The V670 GhostLock profile remains `analysis_only`; no GhostLock exploit was run.
 
-## Next steps
+## Next steps at initial reconnect (superseded by follow-up below)
 
 1. In Magisk, enable Superuser access for ADB/`shell` and grant the pending shell request if shown.
 2. Re-run `/debug_ramdisk/su -c id`; proceed only after it returns `uid=0(root)`. Record `getenforce` again after the reboot.
 3. Do not switch SELinux to permissive unless a specific AVC denial blocks the audio experiment.
 4. Once rooted access is verified, continue with read-only audio-state collection before changing HAL/MS12/DSP behavior. Keep a stock-boot recovery path ready.
+
+## Later Wireless ADB confirmation (2026-11-23)
+
+A later connection over Wireless ADB succeeded on the TV's TLS ADB transport. `adb shell su -c id` returned `uid=0(root) gid=0(root) groups=0(root) context=u:r:magisk:s0`; the shell is rooted and SELinux remains `Enforcing`. This supersedes the initial root-unverified status above. Current ALSA/eARC observations are recorded in [the endpoint inventory](earc-endpoint-and-policy.md#live-wireless-adb-follow-up-2026-11-23). No playback, device-node open, mixer write, or setting change was performed during that inventory.

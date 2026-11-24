@@ -10,7 +10,7 @@ SHA = "0720c8c96dc6a84b112ade4877058aaa7caa37158830e201d148e7ff57e5b7e4"
 
 def inspect(data):
     if hashlib.sha256(data).hexdigest() != SHA:
-        raise ValueError("Not the audited stock V670 US AU02 soc module")
+        raise ValueError("Unexpected SHA-256 for the audited V670 SoC module")
     # Exact-image offsets; addresses in report are section-relative ET_REL offsets.
     ro = memoryview(data)[0x1fd90:0x1fd90 + 0x3f5b0]
     def target(table, base, index, fmt, stride=1):
@@ -21,10 +21,12 @@ def inspect(data):
         "auto_mat_dispatch": hex(target(0x1584, 0x79a84, 0x1b-2, "<i")),
         "bypass_mat_dispatch": hex(target(0x1710, 0x7a194, 0x1b-2, "<i")),
         "shm_mat_hdmi_bypass_dispatch": hex(target(0x21a0, 0x90d24, 0xb4, "<H", 4)),
+        "shm_hdmi_multichannel_pcm_bypass_dispatch": hex(target(0x21a0, 0x90d24, 0xd9, "<H", 4)),
     }
     assert report["auto_mat_dispatch"] == "0x79a94"
     assert report["bypass_mat_dispatch"] == "0x7a46c"
     assert report["shm_mat_hdmi_bypass_dispatch"] == "0x91744"
+    assert report["shm_hdmi_multichannel_pcm_bypass_dispatch"] == "0x91870"
     # Split BTF: only resolve local names, not missing base kernel type IDs.
     b = memoryview(data)[0x121d88:0x121d88+421618]
     magic, ver, flags, hdr, toff, tlen, soff, slen = struct.unpack_from("<HBBIIIII", b)
@@ -41,9 +43,19 @@ def inspect(data):
     enums, fields = {}, {}
     wanted = {"E_AUDIO_INFO_HDMI_IN", "E_AUDIO_INFO_MM_IN", "AU_DVB_STANDARD_MAT",
               "Audio_infoType_Is_Atmos_Stream", "Audio_infoType_Mat_Stream_Type",
-              "R2_SHM_PARAM_DOLBY_MAT_HDMI_BYPASS"}
-    selected = {"eAudioSource", "g_bNextEnableMatBypass", "g_bEnableMatBypass",
-                "g_bNextEnableMatEncode", "g_bSupportMs12MatEncoder", "g_bIsEARCDevice"}
+              "R2_SHM_PARAM_DOLBY_MAT_HDMI_BYPASS", "R2_SHM_PARAM_HDMI_RX_MCH_PCM_HDMI_BYPASS"}
+    expected_fields = {
+        "eAudioSource": "0x1cc",
+        "g_bNextEnableMatBypass": "0x676",
+        "g_bEnableMatBypass": "0x67e",
+        "g_bNextEnableMatEncode": "0x67b",
+        "g_bSupportMs12MatEncoder": "0x684",
+        "g_bIsEARCDevice": "0x3f5e",
+        "g_bHDMIRxBypasseARC": "0x3f65",
+        "g_bEnableHDMIRxMCHBypass": "0x4037",
+        "g_bNextEnableHDMIRxMCHBypass": "0x4038",
+        "bHdmiArcSetNonPcm": "0x4071",
+    }
     pos = 0
     while pos < len(types):
         no, info, size = struct.unpack_from("<III", types, pos)
@@ -63,7 +75,7 @@ def inspect(data):
         if kind == 4 and size == 0x40d0:
             for no, tid, bits in struct.iter_unpack("<III", payload):
                 key = name(no)
-                if key in selected:
+                if key in expected_fields:
                     bits = bits & 0xffffff if info >> 31 else bits
                     assert bits % 8 == 0
                     fields[key] = hex(bits//8)
@@ -71,10 +83,9 @@ def inspect(data):
     assert enums == {"E_AUDIO_INFO_HDMI_IN":"0x2", "E_AUDIO_INFO_MM_IN":"0x4",
                      "AU_DVB_STANDARD_MAT":"0x1b", "Audio_infoType_Is_Atmos_Stream":"0x56",
                      "Audio_infoType_Mat_Stream_Type":"0xb1",
-                     "R2_SHM_PARAM_DOLBY_MAT_HDMI_BYPASS":"0xb4"}
-    assert fields == {"eAudioSource":"0x1cc", "g_bNextEnableMatBypass":"0x676",
-                      "g_bEnableMatBypass":"0x67e", "g_bNextEnableMatEncode":"0x67b",
-                      "g_bSupportMs12MatEncoder":"0x684", "g_bIsEARCDevice":"0x3f5e"}
+                     "R2_SHM_PARAM_DOLBY_MAT_HDMI_BYPASS":"0xb4",
+                     "R2_SHM_PARAM_HDMI_RX_MCH_PCM_HDMI_BYPASS":"0xd9"}
+    assert fields == expected_fields
     report.update(enums=enums, fields=fields, live_identity_verified=False, runtime_validated=False)
     return report
 

@@ -1,18 +1,33 @@
 # TCL eARC passthrough research
 
-Dolby TrueHD Atmos from internal Android TV apps on a TCL 65C9K (Google TV 14, MediaTek mt5896, firmware V670 GB AU04) to a TCL Q85H Pro soundbar over eARC. Plus an optional reversible debloat track.
+Dolby TrueHD Atmos from internal Android TV apps on a **TCL 65C9K** (Google TV 14, MediaTek `mt5896`, firmware `V670 GB AU04`) to a TCL Q85H Pro soundbar over eARC. Plus an optional reversible debloat track.
 
-## Audio baseline (2026-11-19, re-verified live over ADB)
+## Status: SOLVED (2026-11-25)
+
+**Internal Android TV → eARC TX lossless Dolby TrueHD Atmos passthrough is working cleanly end-to-end** on stock C9K V670 with **no HDMI input, no DSP firmware patch, and no boot/DTBO changes**, deployed reversibly via a single Magisk module:
+
+- **Kernel driver ([`native/tcl_earc_mat.c`](native/tcl_earc_mat.c) → `/dev/earc_mat_bypass`):** Exposes a 32-frame (`640 ms`) lock-free SPSC buffered character device with a dedicated `kthread` (`0.25 ms` hrtimer polling via `usleep_range_state`) that locks onto `DEC-R2`'s live 20.000 ms MAT 2.0 cadence in the SE DSP Non-PCM DDR ring (`0x2249C000..0x22640000`, `28 × 61,440` bytes) and overwrites each silent MAT slot immediately before `SE DSP` streams it out over eARC TX (`0x951115 = 0x25`).
+- **Audio HAL shim ([`native/audio_primary_merak_shim.c`](native/audio_primary_merak_shim.c) → `/vendor/lib/hw/audio.primary.merak.so`):** Wraps the stock 32-bit vendor HAL in-place, intercepts **both** `AUDIO_FORMAT_IEC61937` (192 kHz 7.1 MAT, e.g. Kodi `AudioTrack (IEC)` / AudioProbe) **and** `AUDIO_FORMAT_DOLBY_TRUEHD` (48/96/192 kHz raw TrueHD, e.g. Moonfin / Jellyfin / Plex / Stremio / ExoPlayer — packed live 24 AUs → 61,440-byte bit-exact MAT 2.0 bursts) into `/dev/earc_mat_bypass` with `CLOCK_MONOTONIC` presentation timestamps for A/V lip-sync, and leaves all other streams untouched.
+- **Audio Policy + `libaudioclient.so` ([`tools/patch_tcl_audio_stack.py`](tools/patch_tcl_audio_stack.py)):** Exposes `direct_iec61937 output` on `HDMI EARC` (preserving all dynamic EDID profiles) and removes TCL's 5 hardcoded `/system/bin/mediaserver` package-name blocks in `/system/lib/libaudioclient.so`.
+- **Magisk auto-load module ([`magisk/tcl_earc_mat_bypass/`](magisk/tcl_earc_mat_bypass/)):** Loads `tcl_earc_mat.ko` on boot (with `uname -r` guard and `audio_device` SELinux label) and overlays the HAL shim, policy XML, and patched `libaudioclient.so`.
+- **Verified live from cold boot (zero HDMI):**
+  - 30 s full-file `truehd.iec` test (`1499` frames): `29.979 s`, `already_ready=0`, `timeouts=0`, clean **Dolby Atmos** on soundbar.
+  - Standard Android `AudioTrack` (`ENCODING_IEC61937`, `192000 Hz`, `7.1`, `direct=true`) in **AudioProbe**: `505` frames, `underruns=0`, `already_ready=0`, `relocks=0`, clean **Dolby Atmos** on soundbar.
+
+👉 **Full architecture, build steps, and how to find the model/firmware-specific DDR addresses & CRCs on other TCL / MediaTek TVs:** **[`docs/earc-mat-bypass-porting-guide.md`](docs/earc-mat-bypass-porting-guide.md)**.
+
+## Historical baseline & investigation (2026-11-19 – 2026-11-24)
 
 - **Works:** E-AC3 Atmos from apps; TrueHD Atmos from an external HDMI source.
-- **Does not work:** TrueHD from apps plays clean but as Dolby Surround (`isAtmos=0`). IEC61937 is blocked by a TCL client process check and two HAL format gates. MAT payloads from apps are not recognized. TCL Media Center drops MKV TrueHD tracks (`vendor.mtk.mkv.support.truehd` unset, not settable from shell).
-- **Resolved (2026-11-23, rooted live trace — [frida-live-trace-session](docs/frida-live-trace-session.md)):** the old `MatMlpOnly` hypothesis is **disproven** — forcing it `1→0` live via Frida changed nothing (the HAL field is inert). The real cause is **routing + DSP firmware**: external HDMI passes the original object-bearing MAT through (bypass), while the internal source is MAT-**encapsulated by the audio DSP without the Atmos object (EVO) layer**. A clean MM-vs-HDMI diff of the full DSP SHM-param namespace (split-BTF resolved) shows **no Atmos param** differs — the behavior lives in the closed DSP firmware, which is **TEE/Secure-Engine authenticated** (so modifiable only with OEM keys, independent of the now-disabled AVB). **No practical patch exists on V670.** The one remaining untested avenue is forcing **IEC61937/MAT passthrough** from an app (now that root can bypass the userspace gates); it is not TEE-blocked but its feasibility (valid Atmos-MAT framing + whether app-fed IEC passthrough preserves objects) is unproven.
+- **Does not work:** TrueHD from internal apps is decoded and re-encapsulated; the sink reports Dolby Surround rather than Atmos. The prior `enc=19` probe declared Dolby MAT but fed bytes from `truehd.iec` (IEC61937 bursts), so its silence on ARC and eARC does not test the Android IEC61937 encoding-13 path or establish the MAT framing contract. The HAL Atmos callback reported `atmosStream(0)` for the internal MLP session; raw DSP status and transmitted object metadata were not independently read back. TCL Media Center also drops MKV TrueHD tracks (`vendor.mtk.mkv.support.truehd` unset, not settable from shell).
+- **Resolved so far (2026-11-23, rooted live trace — [frida-live-trace-session](docs/frida-live-trace-session.md)):** the old `MatMlpOnly` hypothesis is **disproven** — forcing it `1→0` live via Frida changed nothing (the HAL field is inert). External HDMI input takes a hardware MAT bypass and preserves the Atmos positive control. The internal TrueHD route reaches DSP decode/re-encapsulation; a full MM-vs-HDMI DSP SHM-parameter diff found no exposed Atmos toggle. Offline loader analysis found post-upload segment readback comparison and a conditional TEE command `0x20`; it has **not** established that TEE authenticates DSP firmware. No working internal-app TrueHD Atmos route or patch has been found. The exact GB/AU04 `armfw` comparison and the TEE command semantics remain open.
 
 ## Current device state (2026-11-23)
 
 - AVB device state was unlocked and dm-verity disabled through the live U-Boot console. Magisk v31.1 patched image was written to active `boot_b`.
-- Magisk v31.1 Manager was installed and launched; its first-run restart was accepted. Before that restart SELinux was `Enforcing`, Magisk daemon was running, but `su` returned `Permission denied`, so root is not confirmed.
-- Wireless debugging has been re-enabled after the restart and ADB is connected again. Magisk still denies the shell's `su` request; enable/approve Superuser access for ADB. Full command/output record: [C9K UART root attempt](docs/c9k-v670-uart-root-attempt-2026-11-23.md).
+- Wireless ADB is connected and `su -c id` confirms UID 0; SELinux remains `Enforcing`.
+- Current audio routing exposes HDMI EARC via the restored `earc_output_test` module. The MAT-tagged track opened and routed to eARC, but the test stalled after AudioTrack accepted 286,720 bytes; playback head stayed at zero, so wire transmission is unproven. The tested IEC61937 track did not open, and ALSA still has no separately named `EARC NONPCM Playback` endpoint. Details: [roadmap](docs/roadmap.md) and [endpoint inventory](docs/earc-endpoint-and-policy.md).
+- The earlier Magisk first-run check had returned `Permission denied` before the later root confirmation. Full chronological record: [C9K UART root attempt](docs/c9k-v670-uart-root-attempt-2026-11-23.md).
 
 Plan and verified details: **[docs/roadmap.md](docs/roadmap.md)**.
 
@@ -20,6 +35,7 @@ Plan and verified details: **[docs/roadmap.md](docs/roadmap.md)**.
 
 | Topic | Doc |
 |---|---|
+| **Working eARC MAT bypass & porting guide** | **[earc-mat-bypass-porting-guide](docs/earc-mat-bypass-porting-guide.md)**, [nonpcm-dplayback-driver-audit](docs/nonpcm-dplayback-driver-audit-2026-11-24.md) |
 | Full chronology and test matrix | [investigation](docs/investigation.md) |
 | HDMI vs internal comparison | [hdmi-comparison](docs/hdmi-comparison.md) |
 | E-AC3 JOC positive control | [joc-positive-control](docs/joc-positive-control.md) |
@@ -79,12 +95,14 @@ See [combined collector guide](docs/combined-device-and-uart-collector.md). UART
 ## Layout
 
 ```text
+native/     Kernel bypass driver (tcl_earc_mat.c), Audio HAL shim (audio_primary_merak_shim.c), and DDR/ring diagnostic LKMs
+magisk/     Magisk auto-load module template (tcl_earc_mat_bypass: module.prop, service.sh, sepolicy.rule)
 app/        Java diagnostic app (AudioTrack / tunnel probes, no network permission)
-tools/      Sample prep, host tests, offline firmware/binary analysis
+tools/      CRC extractor & XML/libaudioclient patcher (patch_tcl_audio_stack.py), sample prep, host tests, register & topology scripts
 scripts/    ADB collection and preflight scripts
-docs/       Research notes
+docs/       Research notes and porting guide (earc-mat-bypass-porting-guide.md)
 evidence/   Derived observations and hashes (no raw dumps)
-private/    Git-ignored: device dumps, stock images, pulled binaries, media
+private/    Git-ignored: device dumps, stock images, pulled binaries, compiled .ko/.so, media
 ```
 
 No TCL/MediaTek/Dolby binaries, firmware, commercial media or keys are committed. Not affiliated with TCL, Dolby, MediaTek or Google.

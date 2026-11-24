@@ -59,13 +59,19 @@ adb shell pm uninstall com.gathin.tvhome      # or: pm disable-user --user 0 com
 ```
 (launcherx is untouched, so Home returns to stock immediately.)
 
-## 3. Magisk module: `earc_output_test` (optional)
+## 3. Magisk module: `earc_output_test` (optional; earlier session)
 
-`/data/adb/modules/earc_output_test/system.prop` sets `ro.feature.hdmi_earc=true` at boot, which makes the Android
+At the time of this earlier session, `/data/adb/modules/earc_output_test/system.prop` set `ro.feature.hdmi_earc=true` at boot, which made the Android
 framework expose `HDMI_EARC` as the audio output (with MAT/TrueHD/DTS-HD profiles) instead of `HDMI_ARC` (JOC-max).
 **It does not deliver TrueHD Atmos** (internal TrueHD is still decoded by the DSP — see
 [frida-live-trace-session](frida-live-trace-session.md) §11); it only lifts the ARC format cap. Keep or remove by taste.
 Remove: `adb shell su -c "rm -rf /data/adb/modules/earc_output_test"` then reboot.
+
+A later read-only Wireless ADB check found the module directory absent and `ro.feature.hdmi_earc=false`; HDMI ARC was
+the only available HDMI output. During the 2026-11-23 endpoint investigation, the same property-only module was
+recreated and rebooted. HDMI EARC is now available again, but ALSA still does not register the named non-PCM endpoint.
+See the [endpoint inventory](earc-endpoint-and-policy.md#live-wireless-adb-follow-up-2026-11-23) and its subsequent
+[eARC recheck](earc-endpoint-and-policy.md#re-enabled-earc-endpoint-check-2026-11-23).
 
 ## 4. Boot warning (orange state) — investigated, NOT modified
 
@@ -77,5 +83,5 @@ Removing it needs an `mboot` patch — the highest-risk partition (a bad write =
 ## 5. Instrumentation cleanup
 
 frida-server, Frida hooks and ftrace kprobes used during the audio investigation are all removed (volatile; nothing
-persisted). `ro.feature.hdmi_earc` runtime override from the pre-reboot test was reverted; the boot-time value now
-comes only from the Magisk module above.
+persisted). The old runtime override was reverted. The eARC property module was absent in the initial current-state
+check, then recreated for the 2026-11-23 endpoint investigation; it is active in the latest boot.
