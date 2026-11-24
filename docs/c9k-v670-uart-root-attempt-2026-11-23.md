@@ -3,7 +3,7 @@
 Date: 2026-11-23
 Target: TCL 65C9K / T653T01 / MT5896 / `G08_4K_GB` / V8-T653T01-LF1V670 (AU04), Android 14
 Method: live U-Boot console over PuTTY on COM5, Magisk v31.1 patched stock boot
-Status: Magisk Manager installed; first-run restart accepted. SELinux was Enforcing before restart; ADB is reconnected, but Magisk root authorization still returns `Permission denied`.
+Status: **Succeeded.** AVB unlocked, dm-verity disabled, Magisk v31.1 patched boot written to `boot_b`. Root was initially pending Superuser approval (the `Permission denied` notes below are from that window); it was subsequently granted and **`su -c id` now returns `uid=0(root)`** (used throughout the 2026-11-23/24 session). The GhostLock route mentioned below was not used — this is a standalone UART+Magisk root.
 
 ## Starting evidence
 

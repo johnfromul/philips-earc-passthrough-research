@@ -1,90 +1,120 @@
-# TCL eARC passthrough research
+# TCL 65C9K eARC / Atmos research
 
-Dolby TrueHD Atmos from internal Android TV apps on a TCL 65C9K (Google TV 14, MediaTek mt5896, firmware V670 GB AU04) to a TCL Q85H Pro soundbar over eARC. Plus an optional reversible debloat track.
+Investigation of Dolby TrueHD Atmos from **internal** Android TV apps on a TCL 65C9K (Google TV 14, MediaTek
+MT5896, chassis T653T01, firmware V8-T653T01-LF1V670 / GB AU04) to a TCL Q85H Pro soundbar over eARC — plus a
+reversible debloat + custom-launcher setup on the rooted TV.
 
-## Audio baseline (2026-11-19, re-verified live over ADB)
+## Conclusion (verified on the rooted device, 2026-11-23/24)
 
-- **Works:** E-AC3 Atmos from apps; TrueHD Atmos from an external HDMI source.
-- **Does not work:** TrueHD from apps plays clean but as Dolby Surround (`isAtmos=0`). IEC61937 is blocked by a TCL client process check and two HAL format gates. MAT payloads from apps are not recognized. TCL Media Center drops MKV TrueHD tracks (`vendor.mtk.mkv.support.truehd` unset, not settable from shell).
-- **Resolved (2026-11-23, rooted live trace — [frida-live-trace-session](docs/frida-live-trace-session.md)):** the old `MatMlpOnly` hypothesis is **disproven** — forcing it `1→0` live via Frida changed nothing (the HAL field is inert). The real cause is **routing + DSP firmware**: external HDMI passes the original object-bearing MAT through (bypass), while the internal source is MAT-**encapsulated by the audio DSP without the Atmos object (EVO) layer**. A clean MM-vs-HDMI diff of the full DSP SHM-param namespace (split-BTF resolved) shows **no Atmos param** differs — the behavior lives in the closed DSP firmware, which is **TEE/Secure-Engine authenticated** (so modifiable only with OEM keys, independent of the now-disabled AVB). **No practical patch exists on V670.** The one remaining untested avenue is forcing **IEC61937/MAT passthrough** from an app (now that root can bypass the userspace gates); it is not TEE-blocked but its feasibility (valid Atmos-MAT framing + whether app-fed IEC passthrough preserves objects) is unproven.
+**Internal-app TrueHD Atmos is not achievable on V670.** The TV **decodes** internal compressed audio on its audio
+DSP and re-encapsulates TrueHD into MLP-only MAT, dropping the Atmos object (EVO) layer; it only passes DD+/E-AC3
+through untouched. This was confirmed from every angle with live root instrumentation (Frida + kernel ftrace kprobes),
+not inference — full trail in [frida-live-trace-session](docs/frida-live-trace-session.md):
 
-## Current device state (2026-11-23)
+- The long-standing **`MatMlpOnly` hypothesis is disproven** — forcing it `1→0` live changed nothing (the HAL field
+  is inert).
+- A clean MM-vs-HDMI diff of the **entire DSP SHM parameter namespace** (resolved from the module's split BTF) shows
+  **no Atmos-relevant parameter differs** — the behavior lives in the closed DSP firmware.
+- The DSP firmware is **TEE / Secure-Engine authenticated** (`ST_AUDIO_TEE_FIRMWARE_INFO`, `DSP_SE`), so a modified
+  firmware would be rejected at load — decompiling/patching it is a dead end even with the bootloader unlocked.
+- The **userspace IEC61937/MAT passthrough** bypass was tested end-to-end: a correctly-framed stream (ffmpeg
+  `-f spdif`) opens a MAT offload output to eARC but **stalls (`head=0`, silent)** — the app→IEC61937→eARC transport
+  does not clock on this platform. The HDMI hardware bypass (which does work) cannot be fed from internal apps.
 
-- AVB device state was unlocked and dm-verity disabled through the live U-Boot console. Magisk v31.1 patched image was written to active `boot_b`.
-- Magisk v31.1 Manager was installed and launched; its first-run restart was accepted. Before that restart SELinux was `Enforcing`, Magisk daemon was running, but `su` returned `Permission denied`, so root is not confirmed.
-- Wireless debugging has been re-enabled after the restart and ADB is connected again. Magisk still denies the shell's `su` request; enable/approve Superuser access for ADB. Full command/output record: [C9K UART root attempt](docs/c9k-v670-uart-root-attempt-2026-11-23.md).
+### What works / what to do instead
 
-Plan and verified details: **[docs/roadmap.md](docs/roadmap.md)**.
+| Source | Result |
+|---|---|
+| Internal app, **E-AC3 / DD+ JOC** | **Atmos** (`isAtmos=1`) — passed through to eARC. Use this for streaming apps. |
+| Internal app, **TrueHD** | Clean audio but **Dolby Surround** (`isAtmos=0`); objects stripped by the DSP. |
+| **External HDMI source**, TrueHD | **Atmos** — the TV HW-bypasses the original MAT to eARC. |
+
+For local TrueHD-Atmos files, use a device that **bitstreams TrueHD** on the TV's HDMI input (Raspberry Pi +
+LibreELEC/Kodi, an Nvidia Shield, or a PC with Kodi passthrough) — it uses the working HDMI→eARC bypass path.
+
+## Rooting (UART → U-Boot, this exact set)
+
+Root was obtained over the **HDMI service connector's UART** into the live U-Boot 2019.04 console (no exploit needed).
+Details and the full command/output log: [c9k-hdmi-service-uart](docs/c9k-hdmi-service-uart.md),
+[c9k-v670-uart-root-attempt](docs/c9k-v670-uart-root-attempt-2026-11-23.md).
+
+**Hardware — a USB-to-UART adapter at 1.8 V logic (NOT 3.3/5 V):**
+- HDMI service connector **pin 14 = TV TX** (console out) → adapter RX
+- **pin 2 = TV RX** (commands in) → adapter TX (through a 1.8 V level path)
+- **pin 11 = signal ground / reference**
+- **Never connect HDMI pin 18 (+5 V)** to UART gear. Make/break connections only with the TV powered off.
+- Serial: **115200 8N1** (e.g. PuTTY). You should reach the `=>` U-Boot prompt and see the boot log.
+
+**USB stick:** FAT32, containing the Magisk-patched `boot_b` image (patch the stock `boot_b` with Magisk, verify
+kernel byte-identical + ramdisk changed before flashing). Keep the untouched stock `boot_b` for recovery.
+
+**At the U-Boot `=>` prompt** (active slot was `_b`; adjust for `_a`):
+```text
+avb init mmc
+env set devicestate unlock
+avb set-devicestate 0            # 0 = unlock, 1 = lock
+avb set-verity disable
+saveenv
+usb_partial_upgrade_to_emmc c9k_v670_boot_b_magisk.img boot_b
+reset
+```
+Then complete Android setup, install Magisk Manager, and grant Superuser for ADB/shell (`su -c id` → `uid=0`).
+
+> ⚠️ With the patched boot installed, **do not relock** the bootloader. A bad `mboot`/bootloader write is a hard brick
+> (BROM/SP Flash Tool recovery only). The orange "device is unlocked" boot message lives in `mboot` and was left alone
+> on purpose — it is cosmetic and not worth the brick risk.
+
+## Device changes applied (all reversible)
+
+See **[device-changes-20261123](docs/device-changes-20261123.md)** for the exact packages, commands and restore steps:
+- **Debloat:** 14 packages disabled via `pm disable-user --user 0` (TCL browser/analytics/Guard/Alexa/ChannelPlus/
+  Dashboard/Exhibition/Remote-Diagnosis/Feedback, Netflix, Disney+, Prime Video, HBO Max).
+- **Launcher:** [cleanyourtv](https://github.com/gathin23/cleanyourtv) `com.gathin.tvhome`, built with
+  `stock_home_redirect=launcherx` and set up in safe redirect mode (stock `launcherx` kept as fallback). A Magisk
+  `service.d` boot script re-asserts the Home-key accessibility redirect on every boot (Android clears it otherwise).
+- **Updates off:** `settings put global ota_disable_automatic_update 1`.
+- Partition backups (18 critical partitions + SHA-256 manifest) are on USB; host copy of the manifest in
+  git-ignored `private/backups_20261123/`.
 
 ## Docs
 
 | Topic | Doc |
 |---|---|
-| Full chronology and test matrix | [investigation](docs/investigation.md) |
-| HDMI vs internal comparison | [hdmi-comparison](docs/hdmi-comparison.md) |
-| E-AC3 JOC positive control | [joc-positive-control](docs/joc-positive-control.md) |
-| TrueHD grouped retest | [minirama-retest](docs/minirama-retest.md) |
-| MAT tunnel failures | [mat-tunnel-results](docs/mat-tunnel-results.md) |
-| MatMlpOnly static analysis | [mat-mlp-only-analysis](docs/mat-mlp-only-analysis.md), [mat-bypass-source-predicates](docs/mat-bypass-source-predicates.md), [mat-mlp-hook-strategy](docs/mat-mlp-hook-strategy.md), [mat-mlp-consumer-trace](docs/mat-mlp-consumer-trace.md), [ms12-mat-transcode-trace](docs/ms12-mat-transcode-trace.md), [dsp-dolby-param-map](docs/dsp-dolby-param-map.md) |
-| Decoder/DSP internals | [decoder-dispatch-and-parser](docs/decoder-dispatch-and-parser.md), [decoder-config-contract](docs/decoder-config-contract.md), [mm-dsp-input-boundary](docs/mm-dsp-input-boundary.md), [kernel-audio-driver-audit](docs/kernel-audio-driver-audit.md), [dsp-candidate-audit](docs/dsp-candidate-audit.md), [truehd-parser-alignment](docs/truehd-parser-alignment.md) |
-| MKV extractor gate | [native-extractor-stage4](docs/native-extractor-stage4.md), [native-player-test](docs/native-player-test.md) |
-| IEC61937 firmware design | [custom-firmware-iec61937](docs/custom-firmware-iec61937.md), [iec-client-experiment](docs/iec-client-experiment.md), [earc-endpoint-and-policy](docs/earc-endpoint-and-policy.md), [iec-mat-carrier-reference](docs/iec-mat-carrier-reference.md), [earc-output-and-recovery-gate](docs/earc-output-and-recovery-gate.md), [virtual-hdmi-audio-source](docs/virtual-hdmi-audio-source.md) |
-| Codecs | [codec2-route-analysis](docs/codec2-route-analysis.md), [runtime-codecs-and-bypass](docs/runtime-codecs-and-bypass.md), [vendor-diagnostic-boundary](docs/vendor-diagnostic-boundary.md) |
-| Debloat / privacy | [privacy-audit](docs/privacy-audit.md), [privacy-inventory-results](docs/privacy-inventory-results.md), [privacy-manifest-results](docs/privacy-manifest-results.md) |
+| **Live rooted investigation (why Atmos isn't possible)** | [frida-live-trace-session](docs/frida-live-trace-session.md) |
+| Audio evidence trail (static → live) | [investigation](docs/investigation.md), [hdmi-comparison](docs/hdmi-comparison.md), [joc-positive-control](docs/joc-positive-control.md), [minirama-retest](docs/minirama-retest.md), [mat-tunnel-results](docs/mat-tunnel-results.md) |
+| MAT/DSP decode analysis | [mat-mlp-only-analysis](docs/mat-mlp-only-analysis.md), [mat-mlp-consumer-trace](docs/mat-mlp-consumer-trace.md), [ms12-mat-transcode-trace](docs/ms12-mat-transcode-trace.md), [dsp-dolby-param-map](docs/dsp-dolby-param-map.md), [mat-bypass-source-predicates](docs/mat-bypass-source-predicates.md) |
+| Decoder / kernel / DSP internals | [decoder-dispatch-and-parser](docs/decoder-dispatch-and-parser.md), [decoder-config-contract](docs/decoder-config-contract.md), [mm-dsp-input-boundary](docs/mm-dsp-input-boundary.md), [kernel-audio-driver-audit](docs/kernel-audio-driver-audit.md) |
+| IEC61937 / eARC design | [custom-firmware-iec61937](docs/custom-firmware-iec61937.md), [iec-client-experiment](docs/iec-client-experiment.md), [earc-endpoint-and-policy](docs/earc-endpoint-and-policy.md), [iec-mat-carrier-reference](docs/iec-mat-carrier-reference.md) |
+| Rooting (UART / U-Boot) | [c9k-hdmi-service-uart](docs/c9k-hdmi-service-uart.md), [c9k-v670-uart-root-attempt](docs/c9k-v670-uart-root-attempt-2026-11-23.md) |
+| Device changes (debloat / launcher / updates) | [device-changes-20261123](docs/device-changes-20261123.md) |
+| Debloat / privacy analysis | [privacy-manifest-results](docs/privacy-manifest-results.md), [privacy-inventory-results](docs/privacy-inventory-results.md) |
 | Build, deploy, test | [reproduction](docs/reproduction.md) |
-| OEM report draft | [upstream-report](docs/upstream-report.md) |
 | Evidence hashes | [evidence/README](evidence/README.md) |
-| Second TV handoff | [second-tv-handoff](docs/second-tv-handoff.md), [inspection results](docs/second-tv-results.md) |
-| C655 actual Realtek baseline | [c655-realtek-baseline](docs/c655-realtek-baseline.md) |
-| C655 HDMI Service UART | [Electrical bench measurements](docs/c655-hdmi-service-uart-bench-log.md), [structured readings](evidence/c655-hdmi-service-electrical-2026-11-21.json), [verified ESP32 setup and passive capture](docs/esp32-service-uart.md) |
-| C9K UART and Magisk attempt | [Root attempt log](docs/c9k-v670-uart-root-attempt-2026-11-23.md), [UART hardware findings](docs/c9k-hdmi-service-uart.md) |
 
-## Quick start (Windows)
+## Reproduce (diagnostic app)
 
-Needs JDK 17, Android SDK 34 build-tools, adb, Python 3.8+, FFmpeg.
+Needs JDK 17+, Android SDK 34 build-tools, adb, Python 3.9+, FFmpeg. Builds the `ro.saitatter.audioprobe` app
+(AudioTrack / tunnel / MAT-IEC probes, no network permission):
 
 ```powershell
-adb connect <tv-ip>:<port>          # wireless debugging
+adb connect <tv-ip>:<port>
 powershell -ExecutionPolicy Bypass -File .\build.ps1
 python .\tools\prepare_samples.py 'C:\path\truehd-atmos.mkv' --eac3 'C:\path\eac3-joc.mkv'
 powershell -ExecutionPolicy Bypass -File .\install_samples.ps1
-powershell -ExecutionPolicy Bypass -File .\install_tunnel.ps1
-python .\tools\host_test.py         # host-side parser/grouping tests
 ```
 
 Keep soundbar volume very low when testing encoded formats.
 
-## Collect evidence on additional TV models
-
-For any authorized TCL TV connected over ADB, including C655 variants:
-
-```powershell
-python .\tools\collect_tv_audio_audit.py --label C655-stock --logs
-```
-
-See [multi-device audio audit](docs/multi-device-audio-audit.md) for device selection, optional package inventory, offline stock OTA/image verification and filesystem extraction. Outputs remain under git-ignored private/device_audits. This does not root or modify the TV. No cross-model firmware or patch compatibility is assumed.
-
-## Single ZIP: TV baseline + optional ESP32 UART
-
-Use the combined wrapper to put the existing ADB/stock audit and ESP bridge diagnostics into **one** private ZIP:
-
-```powershell
-python .\tools\collect_tv_research_bundle.py --label C655-stock --no-esp
-# With commissioned ESP, correctly wired and separately powered:
-python .\tools\collect_tv_research_bundle.py --label C655-uart --skip-adb --esp-toolkit "..\tcl-tv-toolkit" --esp-host "ESP_IP" --uart-seconds 90
-```
-
-See [combined collector guide](docs/combined-device-and-uart-collector.md). UART is **passive RX only**; the wrapper never sends bootloader commands or roots/flashes a TV. Select a specific ADB target with `--serial` when multiple TVs are connected. The ZIP is saved under `private/research_bundles/` and must be reviewed before sharing.
-
 ## Layout
 
 ```text
-app/        Java diagnostic app (AudioTrack / tunnel probes, no network permission)
-tools/      Sample prep, host tests, offline firmware/binary analysis
+app/        Java diagnostic app (AudioTrack / tunnel / MAT probes, no network permission)
+tools/      Sample prep, host tests, offline firmware/binary analysis, serial_capture.ps1
 scripts/    ADB collection and preflight scripts
 docs/       Research notes
 evidence/   Derived observations and hashes (no raw dumps)
-private/    Git-ignored: device dumps, stock images, pulled binaries, media
+private/    Git-ignored: device dumps, stock/boot images, pulled binaries, backups, media
 ```
 
-No TCL/MediaTek/Dolby binaries, firmware, commercial media or keys are committed. Not affiliated with TCL, Dolby, MediaTek or Google.
+No TCL/MediaTek/Dolby binaries, firmware, commercial media or keys are committed. Not affiliated with TCL, Dolby,
+MediaTek or Google.

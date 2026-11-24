@@ -13,9 +13,9 @@ Device: TCL 65C9K, chassis T653T01, product `G08_4K_GB`, MT5896, Android 14, fir
 
 ## Current device state
 
-AVB was unlocked, dm-verity disabled, and the Magisk v31.1 patched image was written to `boot_b`. The user completed Android setup, installed Magisk Manager, accepted its first-run restart, and re-enabled Wireless debugging. ADB is connected; SELinux is `Enforcing`, but `/debug_ramdisk/su -c id` returns `Permission denied`, so UID 0 is not yet confirmed. This is a separate, persistent Magisk route; the V670 GhostLock profile remains `analysis_only`.
+AVB was unlocked, dm-verity disabled, and the Magisk v31.1 patched image was written to `boot_b`. After Android setup and installing Magisk Manager, **root is confirmed**: `su -c id` returns `uid=0(root)` (verified repeatedly in the 2026-11-23/24 session). `ro.boot.vbmeta.device_state=unlocked`, `verifiedbootstate=orange`, `veritymode=disabled`, slot `_b`, SELinux `Enforcing`.
 
-The audio investigations dated 2026-11-19 describe the pre-unlock baseline. They are not measurements of the current boot state. No audio HAL or IEC61937 modification has been made.
+This is a persistent Magisk boot modification. Do not relock while the patched boot is installed; the stock boot image is retained for recovery.
 
 ## Electrical caution
 
