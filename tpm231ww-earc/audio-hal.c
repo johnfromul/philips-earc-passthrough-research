@@ -841,6 +841,6 @@ struct hw_module_t HMI = {
     .hal_api_version    = HARDWARE_HAL_API_VERSION,
     .id                 = "audio",
     .name               = "Philips TPM231WW eARC Audio HAL Shim",
-    .author             = "TCL eARC Research",
+    .author             = "Philips TPM231WW eARC port",
     .methods            = &g_shim_methods,
 };
