@@ -7,7 +7,8 @@ Device: TCL 65C9K, chassis T653T01, product `G08_4K_GB`, MT5896, Android 14, fir
 - HDMI service pin 14 carried the bootloader console. A clean capture contained 11,060 bytes across two boot cycles.
 - The live bootloader is U-Boot 2019.04. A PuTTY session on COM5 at 115200 8N1 reached the `=>` prompt, accepted commands, and returned output.
 - Live help confirmed `avb init`, `avb set-devicestate`, `avb set-verity`, `env set`, `saveenv`, USB storage/listing commands, and `usb_partial_upgrade_to_emmc <file_name> <partition_name>`.
-- The service UART uses 1.8 V logic. Pin 14 is TV TX; pin 2 is TV RX; pin 11 was used as the signal reference. HDMI pin 18 carries +5 V and must not be connected to UART equipment.
+- **Update (2026-11-25):** The earlier 1.8 V logic-level claim is **not conclusively established**. The owner confirms a **USB–UART adapter configured for 3.3 V successfully exchanged commands and responses with U-Boot** on this exact C9K (PuTTY COM5, 115200 8N1). This proves that the particular hookup worked, **not** that the TV RX pad is specified to tolerate a direct 3.3 V signal; the precise TV-side signal voltage and whether the final setup included voltage translation were not independently documented.
+- Pin 14 is TV TX; pin 2 is TV RX; pin 11 was used as the signal reference. HDMI pin 18 carries +5 V and must not be connected to UART equipment.
 - The active slot was `_b`. The exact state-changing commands and their observed results are recorded in the [chronological UART/Magisk attempt log](c9k-v670-uart-root-attempt-2026-11-23.md).
 - The passive capture utility is [tools/serial_capture.ps1](../tools/serial_capture.ps1). It only reads serial data and saves local captures under the git-ignored `private/` directory; interactive U-Boot commands in the attempt log were sent separately through PuTTY.
 
@@ -19,4 +20,4 @@ This is a persistent Magisk boot modification. Do not relock while the patched b
 
 ## Electrical caution
 
-Use a level interface appropriate for the TV-side 1.8 V UART. Never drive 3.3 V or 5 V directly into TV pin 2, and never connect HDMI pin 18 to UART equipment. Make or break connections only with the TV powered off. The UART/Magisk attempt log is the source of truth for the commands used and the recovery status.
+**Do not interpret a working 3.3 V adapter as electrical proof that the TV's RX pin is 3.3 V tolerant.** Check the actual TV-side UART voltage and permitted input range before driving pin 2. Until confirmed, use an appropriate level-shifting interface rather than assuming direct 3.3 V is safe. Never drive 5 V into either UART signal pin or connect HDMI pin 18 (+5 V) to UART equipment. Make or break connections only with the TV powered off. The UART/Magisk attempt log is the source of truth for the commands used and recovery status.
