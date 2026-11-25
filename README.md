@@ -51,6 +51,9 @@ MediaTek TVs:** **[`docs/earc-mat-bypass-porting-guide.md`](docs/earc-mat-bypass
 - Stock `snd-pcm-platform.ko` DPlayback/DMA7 (`0x95030c`) collides with active Utopia eARC mute mailboxes, and
   `earc_tx` has no direct host-DMA silicon input bypassing SE DSP ([nonpcm-dplayback-driver-audit](docs/nonpcm-dplayback-driver-audit-2026-11-24.md)).
 
+### Future work / TODO
+- **DTS-HD Master Audio / DTS:X lossless passthrough over eARC:** Investigate whether the same `192 kHz 8-ch` SE DSP Non-PCM HBR ring (`0x2249C000`) can also carry IEC61937 DTS-HD HBR (`Pc = 0x0011`) bursts from internal apps instead of falling back to lossy DTS 5.1 core.
+
 ## Rooting (UART → U-Boot, this exact set)
 
 Root was obtained over the **HDMI service connector's UART** into the live U-Boot 2019.04 console (no exploit needed).

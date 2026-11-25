@@ -177,6 +177,9 @@ struct mat_stream_out {
     uint64_t session_bursts;     /* 20ms MAT bursts written since open/resume */
     uint64_t hw_consumed_bursts; /* bursts already clocked out past the 4-frame kernel queue */
     uint64_t last_hw_sync_ns;    /* CLOCK_MONOTONIC when hw_consumed_bursts last advanced */
+    uint64_t session_start_ns;   /* CLOCK_MONOTONIC at first write of session (for drift diag) */
+    uint32_t resync_skips;       /* count of skipped bytes in TrueHD AU parser */
+    int in_write;                /* >0 while mat_write_all_locked is unlocked inside write() */
     int started;
 
     /* Raw TrueHD -> MAT 2.0 packer state */
@@ -184,6 +187,7 @@ struct mat_stream_out {
     uint32_t au_count;
     uint8_t  thd_acc[TRUEHD_ACC_MAX];
     size_t   thd_acc_len;
+    int      thd_synced;
     uint32_t mat_bursts_emitted;
 };
 
@@ -210,6 +214,7 @@ static void mat_reset_packer_locked(struct mat_stream_out *m)
     memset(m->mat_buf, 0, MAT_FRAME_BYTES);
     m->au_count = 0;
     m->thd_acc_len = 0;
+    m->thd_synced = 0;
 }
 
 #define KERNEL_Q_BURSTS              8U /* matches Q_SLOTS=8 in tcl_earc_mat.c */
@@ -260,6 +265,12 @@ static uint64_t mat_calc_presented_locked(struct mat_stream_out *m, uint64_t now
 
 static void mat_close_fd_locked(struct mat_stream_out *m)
 {
+    /* Wait briefly if mat_write is currently unlocked inside blocking write() so close() is race-free */
+    for (int w = 0; w < 30 && m->in_write > 0; w++) {
+        pthread_mutex_unlock(&m->lock);
+        usleep(2000);
+        pthread_mutex_lock(&m->lock);
+    }
     if (m->started) {
         /* Preserve exact presentation position across pause/standby; align written_frames so drift never accumulates */
         m->base_frames = mat_calc_presented_locked(m, now_monotonic_ns());
@@ -268,17 +279,19 @@ static void mat_close_fd_locked(struct mat_stream_out *m)
     if (m->fd >= 0) {
         close(m->fd);
         m->fd = -1;
-        ALOGI("closed %s (mode=%s written=%llu presented=%llu mat_bursts=%u)",
+        ALOGI("closed %s (mode=%s written=%llu presented=%llu mat_bursts=%u skips=%u)",
               BYPASS_DEV, m->is_raw_truehd ? "TRUEHD_RAW" : "IEC61937",
               (unsigned long long)m->written_frames,
               (unsigned long long)m->base_frames,
-              m->mat_bursts_emitted);
+              m->mat_bursts_emitted, m->resync_skips);
     }
     m->started = 0;
     m->session_bursts = 0;
     m->hw_consumed_bursts = 0;
     m->last_hw_sync_ns = 0;
-    mat_reset_packer_locked(m);
+    m->session_start_ns = 0;
+    /* Do NOT wipe thd_acc/mat_buf on pause/standby: AudioTrack resumes mid-AU without flushing!
+       mat_reset_packer_locked() is called only on mat_flush() (seek/stop). */
 }
 
 static int mat_write_all_locked(struct mat_stream_out *m, const uint8_t *p, size_t left)
@@ -293,6 +306,7 @@ static int mat_write_all_locked(struct mat_stream_out *m, const uint8_t *p, size
             pthread_mutex_lock(&m->lock);
             return -err;
         }
+        m->session_start_ns = now_monotonic_ns();
         ALOGI("opened %s for %s stream (rate=%u ch=0x%x base=%llu)",
               BYPASS_DEV, m->is_raw_truehd ? "TRUEHD_RAW->MAT" : "IEC61937_MAT",
               m->sample_rate, m->channel_mask, (unsigned long long)m->base_frames);
@@ -302,6 +316,7 @@ static int mat_write_all_locked(struct mat_stream_out *m, const uint8_t *p, size
     size_t total = left;
 
     /* Release m->lock around blocking write() so get_presentation_position/pause/binder never stall */
+    m->in_write++;
     pthread_mutex_unlock(&m->lock);
     int io_err = 0;
     while (left > 0) {
@@ -316,13 +331,14 @@ static int mat_write_all_locked(struct mat_stream_out *m, const uint8_t *p, size
         left -= (size_t)w;
     }
     pthread_mutex_lock(&m->lock);
+    m->in_write--;
 
     if (io_err) {
         if (m->fd == fd) {
             ALOGE("write(%s) failed: %s", BYPASS_DEV, strerror(io_err));
             mat_close_fd_locked(m);
         }
-        return -EIO;
+        return -EPIPE;
     }
 
     if (m->fd == fd) {
@@ -332,6 +348,20 @@ static int mat_write_all_locked(struct mat_stream_out *m, const uint8_t *p, size
         if (m->session_bursts > KERNEL_Q_BURSTS) {
             m->hw_consumed_bursts = m->session_bursts - KERNEL_Q_BURSTS;
             m->last_hw_sync_ns = now_monotonic_ns();
+        }
+        if ((m->session_bursts % 500ULL) == 0ULL) {
+            uint64_t now_ns = now_monotonic_ns();
+            uint64_t wall_ms = (now_ns > m->session_start_ns) ? ((now_ns - m->session_start_ns) / 1000000ULL) : 0ULL;
+            uint64_t aud_ms = m->session_bursts * 20ULL;
+            uint64_t pres = mat_calc_presented_locked(m, now_ns);
+            ALOGI("sync-diag: bursts=%llu aud_ms=%llu wall_ms=%llu diff_ms=%lld written=%llu pres=%llu skips=%u",
+                  (unsigned long long)m->session_bursts,
+                  (unsigned long long)aud_ms,
+                  (unsigned long long)wall_ms,
+                  (long long)aud_ms - (long long)wall_ms,
+                  (unsigned long long)m->written_frames,
+                  (unsigned long long)pres,
+                  m->resync_skips);
         }
     }
     return 0;
@@ -415,12 +445,31 @@ static ssize_t mat_write_truehd_raw_locked(struct mat_stream_out *m, const uint8
         consumed += take;
 
         size_t pos = 0;
-        while (m->thd_acc_len - pos >= 4) {
+        while (m->thd_acc_len - pos >= 8) {
             const uint8_t *p = m->thd_acc + pos;
+            if (!m->thd_synced) {
+                /* Lock cleanly onto a TrueHD Major Sync (F8 72 6F BA at bytes 4..7) */
+                if (p[4] == 0xF8U && p[5] == 0x72U && p[6] == 0x6FU && p[7] == 0xBAU) {
+                    size_t au_len = (size_t)(((p[0] & 0x0fU) << 8) | p[1]) * 2U;
+                    if (au_len >= 12 && au_len <= 2560) {
+                        m->thd_synced = 1;
+                    } else {
+                        m->resync_skips++;
+                        pos++;
+                        continue;
+                    }
+                } else {
+                    m->resync_skips++;
+                    pos++;
+                    continue;
+                }
+            }
             /* TrueHD AU length in 16-bit words is in bits [11:0] of first 2 bytes */
             size_t au_len = (size_t)(((p[0] & 0x0fU) << 8) | p[1]) * 2U;
             if (au_len < 4 || au_len > 2560) {
-                /* Resync: skip 1 byte until valid AU header */
+                /* Lost sync: re-lock on next Major Sync */
+                m->thd_synced = 0;
+                m->resync_skips++;
                 pos++;
                 continue;
             }
@@ -576,6 +625,7 @@ static int mat_flush(struct audio_stream_out *s)
     struct mat_stream_out *m = (struct mat_stream_out *)s;
     pthread_mutex_lock(&m->lock);
     mat_close_fd_locked(m);
+    mat_reset_packer_locked(m);
     m->written_frames = 0;
     m->base_frames = 0;
     m->last_presented = 0;
@@ -625,15 +675,18 @@ static int shim_open_output_stream(struct audio_hw_device *dev, int handle,
     int is_truehd  = (config && config->format == AUDIO_FORMAT_DOLBY_TRUEHD);
 
     if (is_iec_mat || is_truehd) {
-        /* Probe /dev/earc_mat_bypass (~20-40ms): if eARC MAT ring is inactive (e.g. TV on
-           Pass through, TV speakers, or soundbar off), fall back cleanly to stock HAL. */
-        int probe_fd = open(BYPASS_DEV, O_WRONLY);
-        if (probe_fd < 0) {
-            ALOGW("eARC MAT ring inactive (%s) for %s -> falling back to stock HAL",
-                  strerror(errno), is_truehd ? "DOLBY_TRUEHD_RAW" : "IEC61937_MAT");
-            return g_orig_open_output_stream(dev, handle, devices, flags, config, stream_out, address);
+        /* For raw TrueHD, probe /dev/earc_mat_bypass (~20-40ms): if eARC MAT ring is inactive
+           (e.g. TV on Pass through / TV speakers / soundbar off), fall back cleanly to stock HAL.
+           For IEC61937, never fall back since stock vendor HAL does not support IEC61937. */
+        if (is_truehd) {
+            int probe_fd = open(BYPASS_DEV, O_WRONLY);
+            if (probe_fd < 0) {
+                ALOGW("eARC MAT ring inactive (%s) for DOLBY_TRUEHD_RAW -> falling back to stock HAL",
+                      strerror(errno));
+                return g_orig_open_output_stream(dev, handle, devices, flags, config, stream_out, address);
+            }
+            close(probe_fd);
         }
-        close(probe_fd);
 
         ALOGI("INTERCEPT open_output_stream: %s rate=%u ch=0x%x dev=0x%x flags=0x%x -> %s",
               is_truehd ? "DOLBY_TRUEHD_RAW" : "IEC61937_MAT",

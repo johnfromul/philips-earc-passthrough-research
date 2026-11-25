@@ -262,6 +262,10 @@ static int dev_open(struct inode *inode, struct file *filp)
 {
     (void)inode;
     (void)filp;
+    for (u32 w = 0; w < 100 && g_open; w++) {
+        usleep_range_state(2000, 3000, TASK_UNINTERRUPTIBLE);
+        __asm__ volatile("dmb ishld" ::: "memory");
+    }
     if (g_open)
         return -16; /* -EBUSY */
 
