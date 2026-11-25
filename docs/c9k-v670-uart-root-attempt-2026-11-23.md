@@ -7,8 +7,8 @@ Status: **Succeeded.** AVB unlocked, dm-verity disabled, Magisk v31.1 patched bo
 
 ## Starting evidence
 
-- The passive HDMI service-UART capture had identified U-Boot 2019.04, AVB green/locked, and active slot `_b`. It also showed the 1.8 V UART and the C9K boot chain. See [UART findings](c9k-hdmi-service-uart.md).
-- The owner confirmed the TX/RX level-shifter path was electrically validated. In this session, PuTTY on COM5 visibly exchanged commands and replies with the live U-Boot prompt. The ESP Wi-Fi automation endpoint was not used for these commands; do not treat this session as proof of an automated ESP send timeline.
+- The passive HDMI service-UART capture had identified U-Boot 2019.04, AVB green/locked, and active slot `_b`. Earlier notes called the UART **1.8 V**, but that voltage was not conclusively established. **Owner update (2026-11-25): a USB–UART adapter configured for 3.3 V worked on this exact unit.** See [UART findings](c9k-hdmi-service-uart.md) for the voltage/tolerance caveat.
+- The owner confirmed a functioning UART hookup: **a USB–UART adapter configured for 3.3 V** was used and PuTTY on COM5 visibly exchanged commands and replies with the live U-Boot prompt. The existing record does not independently verify the actual voltage at TV pin 2, whether an intermediate level shifter was present in that hookup, or the TV pin's 3.3 V input tolerance. Therefore this successful test must **not** be generalized as a recommendation to drive every TCL service UART directly at 3.3 V. The ESP Wi-Fi automation endpoint was not used for these commands; do not treat this session as proof of an automated ESP send timeline.
 - Read-only U-Boot help confirmed:
   - `avb init <dev>`
   - `avb set-verity <enable|disable>`
