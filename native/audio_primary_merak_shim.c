@@ -20,6 +20,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/system_properties.h>
 #include <time.h>
 #include <unistd.h>
 #include <android/log.h>
@@ -212,7 +213,15 @@ static void mat_reset_packer_locked(struct mat_stream_out *m)
 }
 
 #define KERNEL_Q_BURSTS              8U /* matches Q_SLOTS=8 in tcl_earc_mat.c */
-#define SE_DSP_PIPE_BURSTS           1U /* ~20ms SE DSP + eARC TX pipeline lead */
+#define DEFAULT_PIPE_DELAY_MS        160 /* default SE DSP ring + eARC TX + soundbar MAT delay (ms) */
+
+static int mat_get_pipe_delay_ms(void)
+{
+    char val[PROP_VALUE_MAX];
+    if (__system_property_get("debug.earc_sync_ms", val) > 0)
+        return atoi(val);
+    return DEFAULT_PIPE_DELAY_MS;
+}
 
 static uint64_t mat_frames_per_burst(const struct mat_stream_out *m)
 {
@@ -225,17 +234,19 @@ static uint64_t mat_calc_presented_locked(struct mat_stream_out *m, uint64_t now
     uint64_t pos = m->base_frames;
     if (m->started) {
         uint64_t fpb = mat_frames_per_burst(m);
-        uint64_t played_bursts = (m->hw_consumed_bursts > SE_DSP_PIPE_BURSTS)
-                                     ? (m->hw_consumed_bursts - SE_DSP_PIPE_BURSTS)
-                                     : 0ULL;
-        pos = m->base_frames + played_bursts * fpb;
-        if (m->hw_consumed_bursts > SE_DSP_PIPE_BURSTS && now_ns > m->last_hw_sync_ns) {
+        int64_t pipe_delay_frames = ((int64_t)mat_get_pipe_delay_ms() * (int64_t)m->sample_rate) / 1000LL;
+        int64_t raw_frames = (int64_t)(m->hw_consumed_bursts * fpb);
+        if (m->hw_consumed_bursts > 0 && now_ns > m->last_hw_sync_ns) {
             uint64_t dt_ns = now_ns - m->last_hw_sync_ns;
             uint64_t interp = (dt_ns * (uint64_t)m->sample_rate) / 1000000000ULL;
             if (interp > fpb * 2U)
                 interp = fpb * 2U;
-            pos += interp;
+            raw_frames += (int64_t)interp;
         }
+        int64_t adjusted = raw_frames - pipe_delay_frames;
+        if (adjusted < 0)
+            adjusted = 0;
+        pos = m->base_frames + (uint64_t)adjusted;
     }
     if (pos > m->written_frames)
         pos = m->written_frames;
@@ -490,7 +501,8 @@ static int mat_rem_effect(const struct audio_stream *s, void *e) { (void)s; (voi
 static uint32_t mat_get_latency(const struct audio_stream_out *s)
 {
     (void)s;
-    return (KERNEL_Q_BURSTS + SE_DSP_PIPE_BURSTS) * 20U; /* 120 ms */
+    int total = (int)(KERNEL_Q_BURSTS * 20U) + mat_get_pipe_delay_ms();
+    return (total > 20) ? (uint32_t)total : 20U;
 }
 static int mat_set_volume(struct audio_stream_out *s, float l, float r)
 {
