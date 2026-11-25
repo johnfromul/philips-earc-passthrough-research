@@ -16,6 +16,7 @@ import android.view.Choreographer;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.WindowManager;
+import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -72,6 +73,7 @@ public final class SyncCalibratorActivity extends Activity implements Choreograp
 
     private SyncCanvasView canvasView;
     private TextView headerView, statusView, tapLogView;
+    private Button tapBtn, applyBtn;
 
     private int currentOffsetMs = -120;
     private final int[] tapErrors = new int[MAX_TAPS];
@@ -116,13 +118,41 @@ public final class SyncCalibratorActivity extends Activity implements Choreograp
         tapLogView = new TextView(this);
         tapLogView.setTextColor(Color.rgb(210, 215, 225));
         tapLogView.setTextSize(16);
-        tapLogView.setPadding(0, 12, 0, 0);
+        tapLogView.setPadding(0, 12, 0, 10);
         root.addView(tapLogView);
 
+        LinearLayout btnRow = new LinearLayout(this);
+        btnRow.setOrientation(LinearLayout.HORIZONTAL);
+        addBtn(btnRow, "-50 ms", v -> applyOffsetMs(currentOffsetMs - 50));
+        addBtn(btnRow, "-10 ms", v -> applyOffsetMs(currentOffsetMs - 10));
+        tapBtn = addBtn(btnRow, "TAP ON BEAT (OK)", v -> recordTap());
+        addBtn(btnRow, "+10 ms", v -> applyOffsetMs(currentOffsetMs + 10));
+        addBtn(btnRow, "+50 ms", v -> applyOffsetMs(currentOffsetMs + 50));
+        applyBtn = addBtn(btnRow, "Apply Suggested", v -> applyTapAverage());
+        addBtn(btnRow, "Clear", v -> {
+            tapCount = 0;
+            updateLabels("Taps cleared — tap OK on the beep (" + MAX_TAPS + " taps)");
+        });
+        root.addView(btnRow, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
         setContentView(root);
-        updateLabels("Starting TrueHD MAT 2.0 1 Hz beat...");
+        tapBtn.requestFocus();
+        updateLabels("Starting TrueHD MAT 2.0 1 Hz beep...");
         startAudio();
         Choreographer.getInstance().postFrameCallback(this);
+    }
+
+    private Button addBtn(LinearLayout row, String label, View.OnClickListener l) {
+        Button b = new Button(this);
+        b.setText(label);
+        b.setAllCaps(false);
+        b.setFocusable(true);
+        b.setOnClickListener(l);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        lp.setMargins(4, 0, 4, 0);
+        row.addView(b, lp);
+        return b;
     }
 
     @Override
@@ -290,31 +320,12 @@ public final class SyncCalibratorActivity extends Activity implements Choreograp
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
         switch (keyCode) {
-            case KeyEvent.KEYCODE_DPAD_CENTER:
-            case KeyEvent.KEYCODE_ENTER:
-            case KeyEvent.KEYCODE_SPACE:
-                recordTap();
-                return true;
-            case KeyEvent.KEYCODE_DPAD_LEFT:
-                applyOffsetMs(currentOffsetMs - 10);
-                return true;
-            case KeyEvent.KEYCODE_DPAD_RIGHT:
-                applyOffsetMs(currentOffsetMs + 10);
-                return true;
-            case KeyEvent.KEYCODE_DPAD_UP:
-                applyOffsetMs(currentOffsetMs + 50);
-                return true;
-            case KeyEvent.KEYCODE_DPAD_DOWN:
-                applyOffsetMs(currentOffsetMs - 50);
-                return true;
             case KeyEvent.KEYCODE_MENU:
             case KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE:
                 applyTapAverage();
                 return true;
-            case KeyEvent.KEYCODE_DEL:
-            case KeyEvent.KEYCODE_BUTTON_X:
-                tapCount = 0;
-                updateLabels("Taps cleared — press OK on the beat (" + MAX_TAPS + " taps)");
+            case KeyEvent.KEYCODE_SPACE:
+                recordTap();
                 return true;
             default:
                 return super.onKeyDown(keyCode, event);
@@ -365,14 +376,19 @@ public final class SyncCalibratorActivity extends Activity implements Choreograp
     private void updateLabels(String msg) {
         statusView.setText("Current persist.tcl.earc_sync_ms = " + currentOffsetMs + " ms   |   " + msg);
         StringBuilder sb = new StringBuilder();
-        sb.append("Controls:  [OK] Tap on beat   |   [LEFT/RIGHT] ±10 ms   |   [UP/DOWN] ±50 ms   |   [PLAY/MENU] Apply median   |   [BACK] Exit\n");
+        sb.append("Use D-pad + OK on the buttons below (starts focused on TAP ON BEAT). BACK to exit.\n");
         sb.append("Taps (").append(tapCount).append("/").append(MAX_TAPS).append("): ");
         for (int i = 0; i < tapCount; i++) {
             if (i > 0) sb.append(", ");
             sb.append(fmtMs(tapErrors[i]));
         }
         if (tapCount > 0) {
-            sb.append("   |   Median: ").append(fmtMs(medianTapError()));
+            int med = medianTapError();
+            int sug = currentOffsetMs + med;
+            sb.append("   |   Median: ").append(fmtMs(med)).append("   |   Suggested: ").append(sug).append(" ms");
+            if (applyBtn != null) applyBtn.setText("Apply " + sug + " ms");
+        } else {
+            if (applyBtn != null) applyBtn.setText("Apply Suggested");
         }
         tapLogView.setText(sb.toString());
     }
