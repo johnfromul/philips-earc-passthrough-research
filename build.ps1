@@ -25,7 +25,7 @@ try {
     New-Item -ItemType Directory -Force $out | Out-Null
     foreach($name in 'classes','dex') { $p=Join-Path $out $name; if(Test-Path $p){Remove-Item -Recurse -Force $p}; New-Item -ItemType Directory $p | Out-Null }
     $sources = @(Get-ChildItem 'app\src\main\java' -Recurse -Filter '*.java' | ForEach-Object FullName)
-    Run $javac (@('--release','11','-parameters','-classpath',$platform,'-d',"$out\classes") + $sources)
+    Run $javac (@('--release','11','-encoding','UTF-8','-parameters','-classpath',$platform,'-d',"$out\classes") + $sources)
     Run $jar @('cf',"$out\classes.jar",'-C',"$out\classes",'.')
     Run $java @('-cp',$d8Jar,'com.android.tools.r8.D8','--lib',$platform,'--min-api','31','--output',"$out\dex","$out\classes.jar")
     Run $aapt2 @('link','-I',$platform,'--manifest','app\src\main\AndroidManifest.xml','-o',"$out\unsigned.apk",'--min-sdk-version','31','--target-sdk-version','34')
