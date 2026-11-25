@@ -52,7 +52,7 @@ void __cfi_check(u64 id, void *ptr, void *diag) { (void)id; (void)ptr; (void)dia
 #define NUM_SLOTS 28U
 #define SENTINEL  0xCAFEBABEU
 
-#define Q_SLOTS   32U           /* 32 * 20ms = 640ms jitter buffer (power of 2) */
+#define Q_SLOTS   8U            /* 8 * 20ms = 160ms jitter buffer (power of 2) */
 #define Q_MASK    (Q_SLOTS - 1U)
 
 #define TASK_INTERRUPTIBLE   1U
@@ -223,6 +223,11 @@ static int mat_pump_thread(void *arg)
         g_next_slot = (g_next_slot + 1U) % NUM_SLOTS;
         ring_write32(slot_end_off(g_next_slot), SENTINEL);
         __asm__ volatile("dmb ishst" ::: "memory");
+
+        /* DEC-R2 writes every 20.000ms: sleep 16.5ms first to cut hrtimer wakeups by ~85%,
+           then poll at 250us only for the final ~3.5ms window. */
+        if (!g_stop_req)
+            usleep_range_state(16500, 17000, TASK_UNINTERRUPTIBLE);
     }
 
     if (locked && ring_read32(slot_end_off(g_next_slot)) == SENTINEL) {
@@ -269,14 +274,7 @@ static int dev_release(struct inode *inode, struct file *filp)
     (void)inode;
     (void)filp;
 
-    /* Drain remaining buffered frames cleanly (up to 800ms) */
-    for (u32 w = 0; w < 160; w++) {
-        __asm__ volatile("dmb ishld" ::: "memory");
-        if (g_q_tail == g_q_head || !g_thread_alive)
-            break;
-        usleep_range_state(4500, 5500, TASK_UNINTERRUPTIBLE);
-    }
-
+    /* Stop immediately on close() so pause/seek silences within <20ms */
     g_stop_req = 1;
     __asm__ volatile("dmb ishst" ::: "memory");
 
@@ -284,7 +282,7 @@ static int dev_release(struct inode *inode, struct file *filp)
         __asm__ volatile("dmb ishld" ::: "memory");
         if (!g_thread_alive)
             break;
-        usleep_range_state(1000, 2000, TASK_UNINTERRUPTIBLE);
+        usleep_range_state(500, 1000, TASK_UNINTERRUPTIBLE);
     }
 
     _printk("\0016[tcl_earc_mat] closed: frames=%u underruns=%u already_ready=%u relocks=%u\n",

@@ -168,8 +168,14 @@ struct mat_stream_out {
     uint32_t channel_mask;
     uint32_t format;
     uint32_t devices;
+
+    /* Hardware-clocked presentation position tracking (monotonic across pause/resume) */
     uint64_t written_frames;
-    uint64_t start_ns;
+    uint64_t base_frames;        /* preserved across pause/resume; reset only on flush() */
+    uint64_t last_presented;     /* monotonic clamp */
+    uint64_t session_bursts;     /* 20ms MAT bursts written since open/resume */
+    uint64_t hw_consumed_bursts; /* bursts already clocked out past the 4-frame kernel queue */
+    uint64_t last_hw_sync_ns;    /* CLOCK_MONOTONIC when hw_consumed_bursts last advanced */
     int started;
 
     /* Raw TrueHD -> MAT 2.0 packer state */
@@ -205,16 +211,60 @@ static void mat_reset_packer_locked(struct mat_stream_out *m)
     m->thd_acc_len = 0;
 }
 
+#define KERNEL_Q_BURSTS              8U /* matches Q_SLOTS=8 in tcl_earc_mat.c */
+#define SE_DSP_PIPE_BURSTS           1U /* ~20ms SE DSP + eARC TX pipeline lead */
+
+static uint64_t mat_frames_per_burst(const struct mat_stream_out *m)
+{
+    return m->is_raw_truehd ? (uint64_t)(m->sample_rate / 50U)
+                            : (uint64_t)(MAT_FRAME_BYTES / MAT_BYTES_PER_FRAME);
+}
+
+static uint64_t mat_calc_presented_locked(struct mat_stream_out *m, uint64_t now_ns)
+{
+    uint64_t pos = m->base_frames;
+    if (m->started) {
+        uint64_t fpb = mat_frames_per_burst(m);
+        uint64_t played_bursts = (m->hw_consumed_bursts > SE_DSP_PIPE_BURSTS)
+                                     ? (m->hw_consumed_bursts - SE_DSP_PIPE_BURSTS)
+                                     : 0ULL;
+        pos = m->base_frames + played_bursts * fpb;
+        if (m->hw_consumed_bursts > SE_DSP_PIPE_BURSTS && now_ns > m->last_hw_sync_ns) {
+            uint64_t dt_ns = now_ns - m->last_hw_sync_ns;
+            uint64_t interp = (dt_ns * (uint64_t)m->sample_rate) / 1000000000ULL;
+            if (interp > fpb * 2U)
+                interp = fpb * 2U;
+            pos += interp;
+        }
+    }
+    if (pos > m->written_frames)
+        pos = m->written_frames;
+    if (pos < m->last_presented)
+        pos = m->last_presented;
+    m->last_presented = pos;
+    return pos;
+}
+
 static void mat_close_fd_locked(struct mat_stream_out *m)
 {
+    if (m->started) {
+        /* Preserve exact presentation position across pause/standby; align written_frames so drift never accumulates */
+        m->base_frames = mat_calc_presented_locked(m, now_monotonic_ns());
+        m->written_frames = m->base_frames;
+    }
     if (m->fd >= 0) {
         close(m->fd);
         m->fd = -1;
-        ALOGI("closed %s (mode=%s written_frames=%llu mat_bursts=%u)",
+        ALOGI("closed %s (mode=%s written=%llu presented=%llu mat_bursts=%u)",
               BYPASS_DEV, m->is_raw_truehd ? "TRUEHD_RAW" : "IEC61937",
-              (unsigned long long)m->written_frames, m->mat_bursts_emitted);
+              (unsigned long long)m->written_frames,
+              (unsigned long long)m->base_frames,
+              m->mat_bursts_emitted);
     }
     m->started = 0;
+    m->session_bursts = 0;
+    m->hw_consumed_bursts = 0;
+    m->last_hw_sync_ns = 0;
     mat_reset_packer_locked(m);
 }
 
@@ -228,16 +278,12 @@ static int mat_write_all_locked(struct mat_stream_out *m, const uint8_t *p, size
             usleep(20000);
             return -err;
         }
-        ALOGI("opened %s for %s stream (rate=%u ch=0x%x)",
+        ALOGI("opened %s for %s stream (rate=%u ch=0x%x base=%llu)",
               BYPASS_DEV, m->is_raw_truehd ? "TRUEHD_RAW->MAT" : "IEC61937_MAT",
-              m->sample_rate, m->channel_mask);
+              m->sample_rate, m->channel_mask, (unsigned long long)m->base_frames);
     }
 
-    if (!m->started) {
-        m->start_ns = now_monotonic_ns();
-        m->started = 1;
-    }
-
+    size_t total = left;
     while (left > 0) {
         ssize_t w = write(m->fd, p, left);
         if (w < 0) {
@@ -249,6 +295,14 @@ static int mat_write_all_locked(struct mat_stream_out *m, const uint8_t *p, size
         if (w == 0) break;
         p += (size_t)w;
         left -= (size_t)w;
+    }
+
+    uint64_t bursts_now = (total >= MAT_FRAME_BYTES) ? (total / MAT_FRAME_BYTES) : 1ULL;
+    m->session_bursts += bursts_now;
+    m->started = 1;
+    if (m->session_bursts > KERNEL_Q_BURSTS) {
+        m->hw_consumed_bursts = m->session_bursts - KERNEL_Q_BURSTS;
+        m->last_hw_sync_ns = now_monotonic_ns();
     }
     return 0;
 }
@@ -365,7 +419,7 @@ static int mat_set_sample_rate(struct audio_stream *s, uint32_t r) { (void)s; (v
 static size_t mat_get_buffer_size(const struct audio_stream *s)
 {
     const struct mat_stream_out *m = (const struct mat_stream_out *)s;
-    return m->is_raw_truehd ? 32768U : MAT_FRAME_BYTES;
+    return m->is_raw_truehd ? 4096U : MAT_FRAME_BYTES;
 }
 static uint32_t mat_get_channels(const struct audio_stream *s)
 {
@@ -419,7 +473,7 @@ static int mat_rem_effect(const struct audio_stream *s, void *e) { (void)s; (voi
 static uint32_t mat_get_latency(const struct audio_stream_out *s)
 {
     (void)s;
-    return 40; /* ~2 MAT frames latency */
+    return (KERNEL_Q_BURSTS + SE_DSP_PIPE_BURSTS) * 20U; /* 120 ms */
 }
 static int mat_set_volume(struct audio_stream_out *s, float l, float r)
 {
@@ -450,9 +504,11 @@ static ssize_t mat_write(struct audio_stream_out *s, const void *buffer, size_t 
 }
 static int mat_get_render_position(const struct audio_stream_out *s, uint32_t *dsp_frames)
 {
-    const struct mat_stream_out *m = (const struct mat_stream_out *)s;
+    struct mat_stream_out *m = (struct mat_stream_out *)s;
+    pthread_mutex_lock(&m->lock);
     if (dsp_frames)
-        *dsp_frames = (uint32_t)m->written_frames;
+        *dsp_frames = (uint32_t)mat_calc_presented_locked(m, now_monotonic_ns());
+    pthread_mutex_unlock(&m->lock);
     return 0;
 }
 static int mat_get_next_write_timestamp(const struct audio_stream_out *s, int64_t *ts)
@@ -484,6 +540,8 @@ static int mat_flush(struct audio_stream_out *s)
     pthread_mutex_lock(&m->lock);
     mat_close_fd_locked(m);
     m->written_frames = 0;
+    m->base_frames = 0;
+    m->last_presented = 0;
     pthread_mutex_unlock(&m->lock);
     return 0;
 }
@@ -493,14 +551,8 @@ static int mat_get_presentation_position(const struct audio_stream_out *s,
     struct mat_stream_out *m = (struct mat_stream_out *)s;
     pthread_mutex_lock(&m->lock);
     clock_gettime(CLOCK_MONOTONIC, timestamp);
-    if (!m->started) {
-        *frames = m->written_frames;
-    } else {
-        uint64_t now_ns = (uint64_t)timestamp->tv_sec * 1000000000ULL + (uint64_t)timestamp->tv_nsec;
-        uint64_t elapsed_ns = (now_ns > m->start_ns) ? (now_ns - m->start_ns) : 0ULL;
-        uint64_t elapsed_frames = (elapsed_ns * (uint64_t)m->sample_rate) / 1000000000ULL;
-        *frames = (elapsed_frames < m->written_frames) ? elapsed_frames : m->written_frames;
-    }
+    uint64_t now_ns = (uint64_t)timestamp->tv_sec * 1000000000ULL + (uint64_t)timestamp->tv_nsec;
+    *frames = mat_calc_presented_locked(m, now_ns);
     pthread_mutex_unlock(&m->lock);
     return 0;
 }
@@ -581,7 +633,7 @@ static int shim_open_output_stream(struct audio_hw_device *dev, int handle,
         config->sample_rate  = m->sample_rate;
         config->channel_mask = m->channel_mask;
         config->format       = m->format;
-        config->frame_count  = is_truehd ? 32768U : (MAT_FRAME_BYTES / MAT_BYTES_PER_FRAME);
+        config->frame_count  = is_truehd ? 4096U : (MAT_FRAME_BYTES / MAT_BYTES_PER_FRAME);
 
         pthread_mutex_lock(&g_active_lock);
         g_active_mat = m;
