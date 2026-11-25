@@ -1,0 +1,6 @@
+id=philips_tpm231ww_earc
+name=Philips OLED909 TrueHD Atmos eARC
+version=0.1.0
+versionCode=1
+author=TPM231WW eARC project
+description=System-wide 48 kHz TrueHD passthrough for the verified TPM231WW .214 firmware.

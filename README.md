@@ -1,3 +1,15 @@
+# Philips TPM231WW TrueHD Atmos over eARC
+
+This fork adapts the original TCL eARC passthrough project for Philips TVs on the **TPM231WW** platform. Tested on a **Philips OLED909** with firmware **214** (`TPM231WW_R.201.100.228.214`) and a Denon AVC-X4700H.
+
+The [Philips port source](tpm231ww-earc/) includes a HAL wrapper, a kernel driver, and the Magisk module scripts. The wrapper keeps the Philips HAL stream active and forwards raw 48 kHz Dolby TrueHD to eARC in MAT frames.
+
+Tests after booting with the Magisk module confirmed TrueHD Atmos from Kodi, standard TrueHD from an independent Android AudioTrack app, and Dolby Digital Plus Atmos through the stock path. Direct IEC 61937 remains unavailable on the tested Philips setup. The timing guard occasionally skips a write window, and A/V sync has not been measured.
+
+## Original upstream documentation
+
+The documentation below describes the original TCL implementation. Its binaries and hardware addresses are specific to TCL.
+
 # TCL 65C9K eARC / Atmos research
 
 Lossless Dolby TrueHD with Dolby Atmos from **internal** Android TV apps on a **TCL 65C9K** (Google TV 14, MediaTek
