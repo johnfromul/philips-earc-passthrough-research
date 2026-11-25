@@ -57,11 +57,12 @@ Root was obtained over the **HDMI service connector's UART** into the live U-Boo
 Details and the full command/output log: [c9k-hdmi-service-uart](docs/c9k-hdmi-service-uart.md),
 [c9k-v670-uart-root-attempt](docs/c9k-v670-uart-root-attempt-2026-11-23.md).
 
-**Hardware — a USB-to-UART adapter at 1.8 V logic (NOT 3.3/5 V):**
+**Hardware — successful 3.3 V USB–UART adapter test on this C9K; TV-side logic voltage/tolerance not conclusively measured:**
 - HDMI service connector **pin 14 = TV TX** (console out) → adapter RX
-- **pin 2 = TV RX** (commands in) → adapter TX (through a 1.8 V level path)
+- **pin 2 = TV RX** (commands in) ← adapter TX. The owner reports successful two-way U-Boot communication using an adapter configured for **3.3 V**; the exact TV-side TX voltage and whether the final wiring included level translation were not independently documented.
 - **pin 11 = signal ground / reference**
-- **Never connect HDMI pin 18 (+5 V)** to UART gear. Make/break connections only with the TV powered off.
+- **Observed:** PuTTY on COM5 at 115200 8N1 accepted commands and received replies with the owner's **3.3 V USB–UART adapter**. The earlier blanket **“1.8 V only / 3.3 V does not work”** wording was not supported by that working test.
+- **Electrical safety:** functional communication does **not** establish that TV pin 2 is rated for direct 3.3 V drive. Measure the voltage at the TV-side RX/TX pins and verify electrical tolerance or use a suitable level shifter before reproducing; never assume a 3.3 V adapter is universally safe. **Never connect HDMI pin 18 (+5 V)** to UART gear. Make/break connections only with the TV powered off.
 - Serial: **115200 8N1** (e.g. PuTTY). You should reach the `=>` U-Boot prompt and see the boot log.
 
 **USB stick:** FAT32, containing the Magisk-patched `boot_b` image (patch the stock `boot_b` with Magisk, verify
