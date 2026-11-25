@@ -37,13 +37,76 @@ Upstream attribution and source history are available in the [original TCL proje
 - [Kernel driver](tpm231ww-earc/kernel.c), [ABI layout](tpm231ww-earc/kernel-abi.h), and [symbol CRCs](tpm231ww-earc/versions.inc) target the verified Philips firmware.
 - [Magisk scripts](magisk/philips_tpm231ww_earc/) check the kernel release and stock HAL and driver hashes. The installer copies the original HAL directly from the television. The boot script loads the kernel module and limits the device node to the audio user and group.
 
-To package the module, supply the compiled 32-bit Android HAL wrapper as `audio.primary.merak.so` and the compiled Philips arm64 kernel module as `philips_earc_mat.ko`:
+### Install the prebuilt Magisk module
+
+Use the prebuilt ZIP on a rooted Philips TV running Magisk with the verified TPM231WW firmware 214 audio stack. The installer checks the kernel release and the SHA-256 hashes of the original audio HAL and sound driver. If a check fails, use the matching firmware or validate a separate port for that build.
+
+1. Download [philips-tpm231ww-earc-magisk.zip](https://github.com/johnfromul/philips-earc-passthrough-research/releases/download/v0.1.0/philips-tpm231ww-earc-magisk.zip) from [Release v0.1.0](https://github.com/johnfromul/philips-earc-passthrough-research/releases/tag/v0.1.0). Remove any temporary runtime HAL overlay before installing so that the installer can read the original HAL from the TV.
+2. Copy the ZIP to the TV. In Magisk, select **Modules → Install from storage**, choose the ZIP, and reboot when the installation finishes.
+3. In Philips audio settings, select **HDMI sound system**, **eARC → Automatic**, and **Digital output format → Multichannel (bypass)**. In Kodi, enable audio passthrough and TrueHD support.
+4. Play a known TrueHD Atmos track from an internal app. On the receiver, check the **input signal** for **Dolby Atmos – TrueHD**. The Magisk boot log should also report that the driver is ready.
+
+With an already connected and authorized ADB session, the boot checks are:
 
 ```sh
-sh magisk/philips_tpm231ww_earc/package.sh /absolute/path/to/compiled-payloads
+adb shell su -c 'cat /data/adb/modules/philips_tpm231ww_earc/boot.log'
+adb shell su -c 'ls -lZ /dev/earc_mat_bypass'
 ```
 
-Install the generated ZIP in Magisk on the matching firmware, with any live test overlay removed. Set Philips audio output to the HDMI sound system, eARC to **Automatic**, and digital output format to **Multichannel (bypass)**. Enable TrueHD passthrough in the player. Disable the module in Magisk and reboot to restore the stock audio path.
+To restore stock audio, disable the module in Magisk and reboot.
+
+### Build and package from source
+
+The commands below use a Linux x86-64 build host, Android NDK r27c, Clang and LLD 22, Git, and ZIP. The HAL runs in a **32-bit ARM** Android process. The kernel module targets the TV's **64-bit ARM** kernel and uses the ABI and symbol CRCs recorded for firmware 214.
+
+Set `ANDROID_NDK_HOME` to the root of your NDK installation and put the LLVM 22 binaries on `PATH`. The commands assume the Linux LLVM binaries are named `clang-22` and `lld-22`.
+
+```sh
+git clone https://github.com/johnfromul/philips-earc-passthrough-research.git
+cd philips-earc-passthrough-research
+mkdir -p build
+: "${ANDROID_NDK_HOME:?Set ANDROID_NDK_HOME to the Android NDK r27c directory}"
+ndk_bin="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+```
+
+Build the shared HAL wrapper using the Android API 29 ARM target:
+
+```sh
+"$ndk_bin/armv7a-linux-androideabi29-clang" \
+  -O2 -Wall -Wextra -Werror -fPIC -fvisibility=hidden -shared \
+  -Wl,-soname,libphilips_earc_hal.so -Wl,--no-undefined \
+  -Wl,-z,now -Wl,-z,relro -Wl,-z,noexecstack \
+  tpm231ww-earc/audio-hal.c -ldl -llog \
+  -o build/audio.primary.merak.so
+```
+
+Build the Philips kernel module with the validated kernel compiler flags:
+
+```sh
+clang-22 --target=aarch64-linux-gnu \
+  -O2 -Wall -Wextra -Werror -ffreestanding -fno-builtin \
+  -fno-strict-aliasing -fno-pic -fno-pie -fno-stack-protector \
+  -mgeneral-regs-only -mno-outline-atomics \
+  -flto=thin -fsplit-lto-unit -fno-sanitize-ignorelist \
+  -fsanitize=cfi -fsanitize-cfi-cross-dso \
+  -fno-sanitize-cfi-canonical-jump-tables -fsanitize-trap=cfi \
+  -fvisibility=default -ffixed-x18 -fsanitize=shadow-call-stack \
+  -mbranch-protection=pac-ret \
+  -c tpm231ww-earc/kernel.c -o build/kernel.o
+
+lld-22 -flavor gnu -m aarch64elf -r \
+  -T tpm231ww-earc/module.lds build/kernel.o \
+  -o build/philips_earc_mat.ko
+```
+
+Package and check the ZIP:
+
+```sh
+sh magisk/philips_tpm231ww_earc/package.sh "$PWD/build"
+unzip -t magisk/philips-tpm231ww-earc-magisk.zip
+```
+
+Install `magisk/philips-tpm231ww-earc-magisk.zip` using the same Magisk steps above. The ZIP bundles the wrapper and kernel module. The installer obtains the stock HAL from the TV.
 
 ## Verified on OLED909 firmware 214
 
