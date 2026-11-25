@@ -22,13 +22,19 @@ NEEDED_SYMS = [
     b"vmalloc",
     b"vfree",
     b"usleep_range_state",
-    b"msleep",
     b"arm64_use_ng_mappings",
     b"misc_register",
     b"misc_deregister",
     b"_copy_from_iter",
+    b"_copy_to_iter",
     b"kthread_create_on_node",
     b"wake_up_process",
+    b"__init_swait_queue_head",
+    b"complete",
+    b"complete_all",
+    b"wait_for_completion_interruptible_timeout",
+    b"ktime_get",
+    b"sched_set_fifo_low",
 ]
 
 
