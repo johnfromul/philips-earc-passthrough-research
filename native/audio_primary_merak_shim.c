@@ -4,12 +4,18 @@
  * Wraps the stock vendor HAL (/vendor/lib/hw/audio.primary.merak.orig.so):
  * 1. Intercepts AUDIO_FORMAT_IEC61937 (0x0D000000) 192 kHz 8-ch (MAT 2.0 HBR) output
  *    streams (Kodi AudioTrack IEC, AudioProbe, etc.) -> /dev/earc_mat_bypass directly.
- * 2. Intercepts AUDIO_FORMAT_DOLBY_TRUEHD (0x0E000000) raw TrueHD streams (Moonfin,
- *    Jellyfin, Plex, Stremio, ExoPlayer, AudioProbe TRUEHD_RAW) -> packs 24 TrueHD
- *    access units on-the-fly into bit-exact 61,440-byte IEC61937/MAT 2.0 bursts ->
- *    /dev/earc_mat_bypass with accurate CLOCK_MONOTONIC presentation timestamps.
- * 3. Passes all other streams (PCM, AC3, E-AC-3, DTS, UI, mic, patches) untouched
- *    to the stock vendor HAL.
+ * 2. Intercepts AUDIO_FORMAT_DOLBY_TRUEHD (0x0E000000) raw TrueHD streams (48/96/192 kHz,
+ *    Moonfin, Jellyfin, Plex, Stremio, ExoPlayer, AudioProbe TRUEHD_RAW) -> packs TrueHD
+ *    access units dynamically via IEC 61937-9 / Dolby MAT 2.0 input_timing & output_timing
+ *    (supporting UHD Blu-ray peak AUs > 2,560 B up to 8,190 B across MAT code boundaries)
+ *    into bit-exact 61,440-byte MAT 2.0 bursts -> /dev/earc_mat_bypass.
+ * 3. Reads hardware-clocked slot telemetry (frames_out + ktime_get() CLOCK_MONOTONIC ns)
+ *    directly from /dev/earc_mat_bypass for queue-depth-independent A/V lip-sync.
+ * 4. Multi-stream safe registry (handles gapless / overlapping open_output_stream before
+ *    close_output_stream without SIGSEGV or false stock-HAL fallback), plus lossless
+ *    end-of-stream drain via partial MAT tail flush + fsync().
+ * 5. Passes all other streams (PCM, AC3, E-AC-3, DTS, 44.1k-family TrueHD, UI, mic)
+ *    untouched to the stock vendor HAL.
  */
 
 #include <dlfcn.h>
@@ -43,13 +49,19 @@
 #define AUDIO_DEVICE_OUT_HDMI_EARC   0x00040001U
 
 #define MAT_FRAME_BYTES              61440U
-#define MAT_BYTES_PER_FRAME          16U /* 8 ch * 16-bit */
+#define MAT_PAYLOAD_BYTES            61424U
+#define MAT_BYTES_PER_FRAME          16U     /* 8 ch * 16-bit */
 #define MAT_SAMPLE_RATE              192000U
-#define TRUEHD_AU_STRIDE             2560U
-#define TRUEHD_AUS_PER_MAT           24U
-#define TRUEHD_ACC_MAX               8192U
+#define TRUEHD_NOMINAL_AU_SPACING    2560U
+#define TRUEHD_MAX_AU_BYTES          8190U   /* 12-bit word length max: 4095 * 2 */
+#define TRUEHD_ACC_MAX               16384U
+#define MAX_SHIM_STREAMS             8U
+#define MAT_STREAM_MAGIC             0x4D415453U /* 'MATS' */
 
-/* Bit-exact IEC61937-9 / Dolby MAT 2.0 constants (pre-swapped 16-bit LE, verified against truehd.iec) */
+#define KERNEL_Q_BURSTS              8U      /* matches Q_SLOTS=8 in tcl_earc_mat.c */
+#define DEFAULT_PIPE_DELAY_MS        (-120)  /* calibrated on C9K + Q85H Pro eARC */
+
+/* Bit-exact IEC61937-9 / Dolby MAT 2.0 constants (pre-swapped 16-bit LE, verified against FFmpeg spdifenc.c) */
 static const uint8_t IEC61937_MAT_HDR[8] = {
     0x72, 0xf8, 0x1f, 0x4e, 0x16, 0x00, 0xf0, 0xef
 };
@@ -65,6 +77,30 @@ static const uint8_t MAT_MIDDLE_CODE[12] = {
 static const uint8_t MAT_END_CODE[16] = {
     0xc2, 0xc3, 0xc4, 0xc0, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x11, 0x97
+};
+
+struct mat_code_desc {
+    uint32_t pos;
+    uint32_t len;
+    const uint8_t *code;
+};
+
+static const struct mat_code_desc MAT_CODES[3] = {
+    { 0U,     sizeof(MAT_START_CODE),  MAT_START_CODE  },
+    { 30708U, sizeof(MAT_MIDDLE_CODE), MAT_MIDDLE_CODE },
+    { 61408U, sizeof(MAT_END_CODE),    MAT_END_CODE    },
+};
+
+/* Fixed-layout 40-byte status ABI returned by read(/dev/earc_mat_bypass) */
+struct earc_mat_status {
+    uint64_t frames_out;
+    uint64_t last_slot_mono_ns;
+    uint32_t q_depth;
+    uint32_t underruns;
+    uint32_t already_ready;
+    uint32_t relocks;
+    uint32_t ring_active;
+    uint32_t reserved;
 };
 
 /* Minimal 32-bit AOSP hardware/hardware.h + hardware/audio.h ABI (verified against audio.primary.merak.so) */
@@ -162,8 +198,10 @@ struct audio_hw_device {
 
 struct mat_stream_out {
     struct audio_stream_out stream;
+    uint32_t magic;
     pthread_mutex_t lock;
     int fd;
+    int can_read_status;
     int is_raw_truehd;
     uint32_t sample_rate;
     uint32_t channel_mask;
@@ -175,16 +213,26 @@ struct mat_stream_out {
     uint64_t base_frames;        /* preserved across pause/resume; reset only on flush() */
     uint64_t last_presented;     /* monotonic clamp */
     uint64_t session_bursts;     /* 20ms MAT bursts written since open/resume */
-    uint64_t hw_consumed_bursts; /* bursts already clocked out past the 4-frame kernel queue */
-    uint64_t last_hw_sync_ns;    /* CLOCK_MONOTONIC when hw_consumed_bursts last advanced */
-    uint64_t session_start_ns;   /* CLOCK_MONOTONIC at first write of session (for drift diag) */
+    uint64_t hw_consumed_bursts; /* bursts pumped into DDR by earc_mat_pump */
+    uint64_t last_hw_sync_ns;    /* CLOCK_MONOTONIC ns of last pumped DDR slot */
+    uint64_t session_start_ns;   /* CLOCK_MONOTONIC at first write of session */
     uint32_t resync_skips;       /* count of skipped bytes in TrueHD AU parser */
-    int in_write;                /* >0 while mat_write_all_locked is unlocked inside write() */
+    uint32_t last_k_qdepth;
+    uint32_t last_k_underruns;
+    uint32_t last_k_late;
+    uint32_t last_k_relocks;
+    int in_write;                /* >0 while blocking write()/fsync() runs unlocked */
     int started;
 
-    /* Raw TrueHD -> MAT 2.0 packer state */
-    uint8_t  mat_buf[MAT_FRAME_BYTES];
-    uint32_t au_count;
+    /* Dynamic IEC 61937-9 / Dolby MAT 2.0 input_timing & output_timing packer state */
+    uint8_t  mat_buf[MAT_FRAME_BYTES]; /* [0..7]=IEC hdr, [8..61431]=MAT payload, [61432..61439]=0 */
+    uint32_t mat_filled;               /* bytes filled in [0 .. MAT_PAYLOAD_BYTES) */
+    uint16_t thd_prev_time;
+    int      thd_prev_size;
+    int      thd_samples_per_frame;
+    uint16_t thd_output_timing;
+    int      thd_output_timing_valid;
+    int      thd_oi_delta;
     uint8_t  thd_acc[TRUEHD_ACC_MAX];
     size_t   thd_acc_len;
     int      thd_synced;
@@ -200,7 +248,35 @@ static int   (*g_orig_open_output_stream)(struct audio_hw_device *, int, uint32_
 static void  (*g_orig_close_output_stream)(struct audio_hw_device *, struct audio_stream_out *) = NULL;
 
 static pthread_mutex_t g_active_lock = PTHREAD_MUTEX_INITIALIZER;
-static struct mat_stream_out *g_active_mat = NULL;
+static struct mat_stream_out *g_mat_streams[MAX_SHIM_STREAMS];
+
+static void register_shim_stream(struct mat_stream_out *m)
+{
+    pthread_mutex_lock(&g_active_lock);
+    for (uint32_t i = 0; i < MAX_SHIM_STREAMS; i++) {
+        if (g_mat_streams[i] == NULL) {
+            g_mat_streams[i] = m;
+            break;
+        }
+    }
+    pthread_mutex_unlock(&g_active_lock);
+}
+
+static struct mat_stream_out *unregister_shim_stream(struct audio_stream_out *out)
+{
+    struct mat_stream_out *found = NULL;
+    pthread_mutex_lock(&g_active_lock);
+    for (uint32_t i = 0; i < MAX_SHIM_STREAMS; i++) {
+        if (g_mat_streams[i] && &g_mat_streams[i]->stream == out &&
+            g_mat_streams[i]->magic == MAT_STREAM_MAGIC) {
+            found = g_mat_streams[i];
+            g_mat_streams[i] = NULL;
+            break;
+        }
+    }
+    pthread_mutex_unlock(&g_active_lock);
+    return found;
+}
 
 static uint64_t now_monotonic_ns(void)
 {
@@ -212,13 +288,16 @@ static uint64_t now_monotonic_ns(void)
 static void mat_reset_packer_locked(struct mat_stream_out *m)
 {
     memset(m->mat_buf, 0, MAT_FRAME_BYTES);
-    m->au_count = 0;
+    m->mat_filled = 0;
+    m->thd_prev_time = 0;
+    m->thd_prev_size = 0;
+    m->thd_samples_per_frame = 0;
+    m->thd_output_timing = 0;
+    m->thd_output_timing_valid = 0;
+    m->thd_oi_delta = 0;
     m->thd_acc_len = 0;
     m->thd_synced = 0;
 }
-
-#define KERNEL_Q_BURSTS              8U /* matches Q_SLOTS=8 in tcl_earc_mat.c */
-#define DEFAULT_PIPE_DELAY_MS        (-120) /* calibrated on C9K + Q85H Pro eARC */
 
 static int mat_get_pipe_delay_ms(void)
 {
@@ -236,18 +315,40 @@ static uint64_t mat_frames_per_burst(const struct mat_stream_out *m)
                             : (uint64_t)(MAT_FRAME_BYTES / MAT_BYTES_PER_FRAME);
 }
 
+static void mat_poll_kernel_status_locked(struct mat_stream_out *m)
+{
+    if (m->fd < 0 || !m->can_read_status)
+        return;
+
+    struct earc_mat_status st;
+    ssize_t r = read(m->fd, &st, sizeof(st));
+    if (r == (ssize_t)sizeof(st)) {
+        m->hw_consumed_bursts = st.frames_out;
+        if (st.last_slot_mono_ns != 0)
+            m->last_hw_sync_ns = st.last_slot_mono_ns;
+        m->last_k_qdepth    = st.q_depth;
+        m->last_k_underruns = st.underruns;
+        m->last_k_late      = st.already_ready;
+        m->last_k_relocks   = st.relocks;
+    } else if (r < 0 && (errno == EACCES || errno == EBADF || errno == EINVAL)) {
+        m->can_read_status = 0;
+    }
+}
+
 static uint64_t mat_calc_presented_locked(struct mat_stream_out *m, uint64_t now_ns)
 {
     uint64_t pos = m->base_frames;
     if (m->started) {
+        mat_poll_kernel_status_locked(m);
+
         uint64_t fpb = mat_frames_per_burst(m);
         int64_t pipe_delay_frames = ((int64_t)mat_get_pipe_delay_ms() * (int64_t)m->sample_rate) / 1000LL;
         int64_t raw_frames = (int64_t)(m->hw_consumed_bursts * fpb);
-        if (m->hw_consumed_bursts > 0 && now_ns > m->last_hw_sync_ns) {
+        if (m->hw_consumed_bursts > 0 && m->last_hw_sync_ns > 0 && now_ns > m->last_hw_sync_ns) {
             uint64_t dt_ns = now_ns - m->last_hw_sync_ns;
             uint64_t interp = (dt_ns * (uint64_t)m->sample_rate) / 1000000000ULL;
-            if (interp > fpb * 2U)
-                interp = fpb * 2U;
+            if (interp > fpb)
+                interp = fpb;
             raw_frames += (int64_t)interp;
         }
         int64_t adjusted = raw_frames - pipe_delay_frames;
@@ -265,8 +366,8 @@ static uint64_t mat_calc_presented_locked(struct mat_stream_out *m, uint64_t now
 
 static void mat_close_fd_locked(struct mat_stream_out *m)
 {
-    /* Wait briefly if mat_write is currently unlocked inside blocking write() so close() is race-free */
-    for (int w = 0; w < 30 && m->in_write > 0; w++) {
+    /* Wait briefly if mat_write / mat_drain is currently unlocked inside write()/fsync() */
+    for (int w = 0; w < 60 && m->in_write > 0; w++) {
         pthread_mutex_unlock(&m->lock);
         usleep(2000);
         pthread_mutex_lock(&m->lock);
@@ -279,26 +380,33 @@ static void mat_close_fd_locked(struct mat_stream_out *m)
     if (m->fd >= 0) {
         close(m->fd);
         m->fd = -1;
-        ALOGI("closed %s (mode=%s written=%llu presented=%llu mat_bursts=%u skips=%u)",
+        ALOGI("closed %s (mode=%s written=%llu presented=%llu mat_bursts=%u skips=%u k_underruns=%u k_late=%u)",
               BYPASS_DEV, m->is_raw_truehd ? "TRUEHD_RAW" : "IEC61937",
               (unsigned long long)m->written_frames,
               (unsigned long long)m->base_frames,
-              m->mat_bursts_emitted, m->resync_skips);
+              m->mat_bursts_emitted, m->resync_skips,
+              m->last_k_underruns, m->last_k_late);
     }
     m->started = 0;
     m->session_bursts = 0;
     m->hw_consumed_bursts = 0;
     m->last_hw_sync_ns = 0;
     m->session_start_ns = 0;
-    /* Do NOT wipe thd_acc/mat_buf on pause/standby: AudioTrack resumes mid-AU without flushing!
-       mat_reset_packer_locked() is called only on mat_flush() (seek/stop). */
+    m->last_k_qdepth = 0;
+    /* Do NOT wipe mat_buf/thd_acc/timing state on pause/standby: AudioTrack resumes mid-AU without flushing!
+       mat_reset_packer_locked() is called only on mat_flush() (seek/stop) or mat_drain() completion. */
 }
 
 static int mat_write_all_locked(struct mat_stream_out *m, const uint8_t *p, size_t left)
 {
     if (m->fd < 0) {
-        m->fd = open(BYPASS_DEV, O_WRONLY);
-        if (m->fd < 0) {
+        int can_read = 1;
+        int fd_open = open(BYPASS_DEV, O_RDWR);
+        if (fd_open < 0 && (errno == EACCES || errno == EPERM)) {
+            fd_open = open(BYPASS_DEV, O_WRONLY);
+            can_read = 0;
+        }
+        if (fd_open < 0) {
             int err = errno;
             ALOGE("failed to open %s: %s (%d)", BYPASS_DEV, strerror(err), err);
             pthread_mutex_unlock(&m->lock);
@@ -306,9 +414,12 @@ static int mat_write_all_locked(struct mat_stream_out *m, const uint8_t *p, size
             pthread_mutex_lock(&m->lock);
             return -err;
         }
+        m->fd = fd_open;
+        m->can_read_status = can_read;
         m->session_start_ns = now_monotonic_ns();
-        ALOGI("opened %s for %s stream (rate=%u ch=0x%x base=%llu)",
-              BYPASS_DEV, m->is_raw_truehd ? "TRUEHD_RAW->MAT" : "IEC61937_MAT",
+        ALOGI("opened %s (%s) for %s stream (rate=%u ch=0x%x base=%llu)",
+              BYPASS_DEV, can_read ? "O_RDWR" : "O_WRONLY",
+              m->is_raw_truehd ? "TRUEHD_RAW->MAT" : "IEC61937_MAT",
               m->sample_rate, m->channel_mask, (unsigned long long)m->base_frames);
     }
 
@@ -345,7 +456,7 @@ static int mat_write_all_locked(struct mat_stream_out *m, const uint8_t *p, size
         uint64_t bursts_now = (total >= MAT_FRAME_BYTES) ? (total / MAT_FRAME_BYTES) : 1ULL;
         m->session_bursts += bursts_now;
         m->started = 1;
-        if (m->session_bursts > KERNEL_Q_BURSTS) {
+        if (!m->can_read_status && m->session_bursts > KERNEL_Q_BURSTS) {
             m->hw_consumed_bursts = m->session_bursts - KERNEL_Q_BURSTS;
             m->last_hw_sync_ns = now_monotonic_ns();
         }
@@ -354,14 +465,16 @@ static int mat_write_all_locked(struct mat_stream_out *m, const uint8_t *p, size
             uint64_t wall_ms = (now_ns > m->session_start_ns) ? ((now_ns - m->session_start_ns) / 1000000ULL) : 0ULL;
             uint64_t aud_ms = m->session_bursts * 20ULL;
             uint64_t pres = mat_calc_presented_locked(m, now_ns);
-            ALOGI("sync-diag: bursts=%llu aud_ms=%llu wall_ms=%llu diff_ms=%lld written=%llu pres=%llu skips=%u",
+            ALOGI("sync-diag: bursts=%llu k_out=%llu q=%u aud_ms=%llu wall_ms=%llu pres=%llu skips=%u u=%u late=%u",
                   (unsigned long long)m->session_bursts,
+                  (unsigned long long)m->hw_consumed_bursts,
+                  m->last_k_qdepth,
                   (unsigned long long)aud_ms,
                   (unsigned long long)wall_ms,
-                  (long long)aud_ms - (long long)wall_ms,
-                  (unsigned long long)m->written_frames,
                   (unsigned long long)pres,
-                  m->resync_skips);
+                  m->resync_skips,
+                  m->last_k_underruns,
+                  m->last_k_late);
         }
     }
     return 0;
@@ -387,50 +500,289 @@ static void copy_swap16(uint8_t *dst, const uint8_t *src, size_t len)
     }
 }
 
-/* Pack one complete raw TrueHD access unit into m->mat_buf; flush 61,440-byte MAT burst every 24 AUs */
-static int mat_push_truehd_au_locked(struct mat_stream_out *m, const uint8_t *au, size_t au_len)
+/* Bounded MSB-first bit reader for TrueHD Major Sync substream restart header (output_timing) */
+struct bit_reader {
+    const uint8_t *buf;
+    size_t bit_pos;
+    size_t bit_end;
+};
+
+static inline size_t br_left(const struct bit_reader *br)
 {
-    uint32_t idx = m->au_count;
-    size_t dst_off;
-    size_t max_len;
+    return (br->bit_pos < br->bit_end) ? (br->bit_end - br->bit_pos) : 0U;
+}
 
-    if (idx == 0) {
-        dst_off = 28; /* 8-byte IEC header + 20-byte MAT_START_CODE */
-        max_len = TRUEHD_AU_STRIDE + 8 - dst_off; /* 2540 bytes */
-    } else if (idx == 11) {
-        dst_off = idx * TRUEHD_AU_STRIDE + 8;
-        max_len = 30716 - dst_off; /* stop before MAT_MIDDLE_CODE at 30716 */
-    } else if (idx == 23) {
-        dst_off = idx * TRUEHD_AU_STRIDE + 8;
-        max_len = 61416 - dst_off; /* stop before MAT_END_CODE at 61416 */
-    } else {
-        dst_off = idx * TRUEHD_AU_STRIDE + 8;
-        max_len = TRUEHD_AU_STRIDE;
+static inline uint32_t br_get(struct bit_reader *br, unsigned int nbits)
+{
+    uint32_t val = 0;
+    for (unsigned int i = 0; i < nbits; i++) {
+        size_t p = br->bit_pos++;
+        val = (val << 1) | ((br->buf[p >> 3] >> (7U - (p & 7U))) & 1U);
+    }
+    return val;
+}
+
+static inline void br_skip(struct bit_reader *br, size_t nbits)
+{
+    br->bit_pos += nbits;
+}
+
+struct thd_au_info {
+    uint16_t input_timing;
+    uint16_t output_timing;
+    int      has_output_timing;
+    int      samples_per_frame;
+};
+
+/* Parse TrueHD / MLP Access Unit timing & optional Major Sync restart-header output_timing */
+static int truehd_parse_au_info(const uint8_t *au_data, size_t au_size, struct thd_au_info *au)
+{
+    memset(au, 0, sizeof(*au));
+    if (au_size < 4U)
+        return -1;
+
+    au->input_timing = (uint16_t)(((uint16_t)au_data[2] << 8) | au_data[3]);
+
+    const uint8_t *data = au_data + 4;
+    size_t size = au_size - 4U;
+    if (size < 6U || data[0] != 0xf8U || data[1] != 0x72U || data[2] != 0x6fU)
+        return 0;
+
+    uint8_t ratebits;
+    if (data[3] == 0xbaU)
+        ratebits = data[4] >> 4;
+    else if (data[3] == 0xbbU)
+        ratebits = data[5] >> 4;
+    else
+        return -1;
+
+    /* 44.1 / 88.2 / 176.4 kHz family cannot be carried on a fixed 192.000 kHz 20ms ring */
+    if ((ratebits & 0x08U) != 0U)
+        return -2;
+
+    au->samples_per_frame = 40 << (ratebits & 0x03U); /* 40 (48k), 80 (96k), or 160 (192k) */
+    if (size < 28U)
+        return 0;
+
+    size_t major_sync_size = 28U;
+    if (data[3] == 0xbaU && (data[25] & 1U)) {
+        size_t ext_size = (size_t)(data[26] >> 4);
+        major_sync_size += 2U + ext_size * 2U;
+    }
+    if (major_sync_size >= size)
+        return 0;
+
+    int num_substreams = (int)(data[16] >> 4);
+    if (num_substreams <= 0)
+        return 0;
+
+    struct bit_reader br = {
+        .buf     = data + major_sync_size,
+        .bit_pos = 0U,
+        .bit_end = (size - major_sync_size) * 8U,
+    };
+
+    for (int i = 0; i < num_substreams; i++) {
+        if (br_left(&br) < 16U)
+            return 0;
+        uint32_t extra_word = br_get(&br, 1U);
+        br_skip(&br, 15U);
+        if (extra_word) {
+            if (br_left(&br) < 16U)
+                return 0;
+            br_skip(&br, 16U);
+        }
     }
 
-    if (au_len > max_len)
-        au_len = max_len;
+    if (br_left(&br) < 2U)
+        return 0;
+    if (!br_get(&br, 1U)) /* !block_header_exists */
+        return 0;
+    if (!br_get(&br, 1U)) /* !restart_header_exists */
+        return 0;
+    if (br_left(&br) < (13U + 1U + 16U))
+        return 0;
 
-    copy_swap16(m->mat_buf + dst_off, au, au_len);
-    m->au_count++;
+    uint32_t sync_word = br_get(&br, 13U);
+    if (sync_word != (0x31eaU >> 1))
+        return 0;
+    br_skip(&br, 1U); /* noise_type */
 
-    if (m->au_count == TRUEHD_AUS_PER_MAT) {
-        memcpy(m->mat_buf + 0,     IEC61937_MAT_HDR, sizeof(IEC61937_MAT_HDR));
-        memcpy(m->mat_buf + 8,     MAT_START_CODE,   sizeof(MAT_START_CODE));
-        memcpy(m->mat_buf + 30716, MAT_MIDDLE_CODE,  sizeof(MAT_MIDDLE_CODE));
-        memcpy(m->mat_buf + 61416, MAT_END_CODE,     sizeof(MAT_END_CODE));
-
-        int rc = mat_write_all_locked(m, m->mat_buf, MAT_FRAME_BYTES);
-        memset(m->mat_buf, 0, MAT_FRAME_BYTES);
-        m->au_count = 0;
-        if (rc != 0)
-            return rc;
-
-        m->mat_bursts_emitted++;
-        /* 24 TrueHD AUs = 20.000 ms = 960 frames at 48 kHz */
-        m->written_frames += (uint64_t)(m->sample_rate / 50U);
-    }
+    au->output_timing = (uint16_t)br_get(&br, 16U);
+    au->has_output_timing = 1;
     return 0;
+}
+
+static int mat_emit_current_frame_locked(struct mat_stream_out *m)
+{
+    memcpy(m->mat_buf + 0, IEC61937_MAT_HDR, sizeof(IEC61937_MAT_HDR));
+    memset(m->mat_buf + 8U + MAT_PAYLOAD_BYTES, 0, MAT_FRAME_BYTES - 8U - MAT_PAYLOAD_BYTES);
+
+    int rc = mat_write_all_locked(m, m->mat_buf, MAT_FRAME_BYTES);
+    memset(m->mat_buf, 0, MAT_FRAME_BYTES);
+    m->mat_filled = 0;
+    if (rc != 0)
+        return rc;
+
+    m->mat_bursts_emitted++;
+    /* One 61,440-byte MAT 2.0 frame = 20.000 ms = sample_rate / 50 frames (960 @ 48k, 1920 @ 96k, 3840 @ 192k) */
+    m->written_frames += (uint64_t)(m->sample_rate / 50U);
+    return 0;
+}
+
+/*
+ * Dynamic IEC 61937-9 / Dolby MAT 2.0 AU packer (matches FFmpeg spdif_header_truehd):
+ * Places AUs at exact input_timing offsets, seamlessly splitting large UHD Remux AUs (>2560 B)
+ * around MAT_MIDDLE_CODE (30708) and across consecutive 61,440-byte MAT frames.
+ */
+static int mat_pack_truehd_au_locked(struct mat_stream_out *m, const uint8_t *au_buf, size_t au_len)
+{
+    if (au_len < 10U)
+        return 0;
+
+    struct thd_au_info au;
+    int prc = truehd_parse_au_info(au_buf, au_len, &au);
+    if (prc < 0)
+        return 0;
+
+    if (au.samples_per_frame > 0)
+        m->thd_samples_per_frame = au.samples_per_frame;
+    if (m->thd_samples_per_frame <= 0)
+        return 0;
+
+    uint16_t input_timing = au.input_timing;
+    int max_padding = (int)(MAT_PAYLOAD_BYTES * 2U);
+    int padding_remaining = 0;
+    int output_discontinuity = 0;
+
+    m->thd_output_timing = (uint16_t)(m->thd_output_timing + (uint16_t)m->thd_samples_per_frame);
+    if (au.has_output_timing) {
+        if (m->thd_output_timing_valid && au.output_timing != m->thd_output_timing) {
+            int bytes_per_sample = (int)TRUEHD_NOMINAL_AU_SPACING / m->thd_samples_per_frame;
+            uint16_t out_minus_spf = (uint16_t)(au.output_timing - (uint16_t)m->thd_samples_per_frame);
+            int prev_oi_delta = m->thd_oi_delta;
+            int curr_oi_delta = (int)(int16_t)(out_minus_spf - input_timing);
+            int prev_padding = m->thd_prev_size ? ((int)TRUEHD_NOMINAL_AU_SPACING - m->thd_prev_size) : 0;
+            int disc_padding = (prev_oi_delta - curr_oi_delta) * bytes_per_sample;
+
+            output_discontinuity = 1;
+            padding_remaining = prev_padding + disc_padding;
+            if (padding_remaining < 0 || padding_remaining > max_padding)
+                padding_remaining = 0;
+        }
+        m->thd_output_timing = au.output_timing;
+        m->thd_output_timing_valid = 1;
+    }
+
+    if (m->thd_prev_size > 0 && !output_discontinuity) {
+        uint16_t delta_samples = (uint16_t)(input_timing - m->thd_prev_time);
+        int delta_bytes = ((int)delta_samples * (int)TRUEHD_NOMINAL_AU_SPACING) / m->thd_samples_per_frame;
+        padding_remaining = delta_bytes - m->thd_prev_size;
+        if (padding_remaining < 0 || padding_remaining > max_padding)
+            padding_remaining = 0;
+    }
+
+    if (m->thd_output_timing_valid) {
+        uint16_t out_minus_spf = (uint16_t)(m->thd_output_timing - (uint16_t)m->thd_samples_per_frame);
+        m->thd_oi_delta = (int)(int16_t)(out_minus_spf - input_timing);
+    }
+
+    uint32_t next_code_idx = 0;
+    for (; next_code_idx < 3U; next_code_idx++) {
+        if (m->mat_filled <= MAT_CODES[next_code_idx].pos)
+            break;
+    }
+    if (next_code_idx >= 3U) {
+        mat_reset_packer_locked(m);
+        return 0;
+    }
+
+    int total_frame_size = (int)au_len;
+    const uint8_t *dataptr = au_buf;
+    int data_remaining = (int)au_len;
+    uint8_t *payload = m->mat_buf + 8U;
+
+    while (padding_remaining > 0 || data_remaining > 0 ||
+           MAT_CODES[next_code_idx].pos == m->mat_filled) {
+
+        if (MAT_CODES[next_code_idx].pos == m->mat_filled) {
+            int code_len = (int)MAT_CODES[next_code_idx].len;
+            int code_len_rem = code_len;
+            memcpy(payload + MAT_CODES[next_code_idx].pos, MAT_CODES[next_code_idx].code, (size_t)code_len);
+            m->mat_filled += (uint32_t)code_len;
+
+            next_code_idx++;
+            if (next_code_idx == 3U) {
+                next_code_idx = 0U;
+                int rc = mat_emit_current_frame_locked(m);
+                if (rc != 0) {
+                    mat_reset_packer_locked(m);
+                    return rc;
+                }
+                payload = m->mat_buf + 8U;
+                /* Account for the 16-byte IEC inter-frame header/tail gap (61440 - 61424) */
+                code_len_rem += (int)(MAT_FRAME_BYTES - MAT_PAYLOAD_BYTES);
+            }
+
+            if (padding_remaining > 0) {
+                int used_pad = (padding_remaining < code_len_rem) ? padding_remaining : code_len_rem;
+                padding_remaining -= used_pad;
+                code_len_rem -= used_pad;
+            }
+            if (code_len_rem > 0)
+                total_frame_size += code_len_rem;
+        }
+
+        if (padding_remaining > 0) {
+            int avail = (int)(MAT_CODES[next_code_idx].pos - m->mat_filled);
+            int pad_now = (avail < padding_remaining) ? avail : padding_remaining;
+            if (pad_now > 0) {
+                memset(payload + m->mat_filled, 0, (size_t)pad_now);
+                m->mat_filled += (uint32_t)pad_now;
+                padding_remaining -= pad_now;
+            }
+            if (padding_remaining > 0)
+                continue;
+        }
+
+        if (data_remaining > 0) {
+            int avail = (int)(MAT_CODES[next_code_idx].pos - m->mat_filled);
+            int ins_now = (avail < data_remaining) ? avail : data_remaining;
+            if (ins_now > 0) {
+                copy_swap16(payload + m->mat_filled, dataptr, (size_t)ins_now);
+                m->mat_filled += (uint32_t)ins_now;
+                dataptr += ins_now;
+                data_remaining -= ins_now;
+            }
+        }
+    }
+
+    m->thd_prev_time = input_timing;
+    m->thd_prev_size = total_frame_size;
+    return 0;
+}
+
+/* Pad and flush any trailing partial MAT payload (<20ms tail) at end-of-stream drain() */
+static int mat_flush_partial_tail_locked(struct mat_stream_out *m)
+{
+    if (!m->is_raw_truehd || m->mat_filled <= sizeof(MAT_START_CODE))
+        return 0;
+
+    uint8_t *payload = m->mat_buf + 8U;
+    if (m->mat_filled <= MAT_CODES[1].pos) {
+        memset(payload + m->mat_filled, 0, MAT_CODES[1].pos - m->mat_filled);
+        memcpy(payload + MAT_CODES[1].pos, MAT_CODES[1].code, MAT_CODES[1].len);
+        m->mat_filled = MAT_CODES[1].pos + MAT_CODES[1].len;
+    }
+    if (m->mat_filled <= MAT_CODES[2].pos) {
+        memset(payload + m->mat_filled, 0, MAT_CODES[2].pos - m->mat_filled);
+        memcpy(payload + MAT_CODES[2].pos, MAT_CODES[2].code, MAT_CODES[2].len);
+        m->mat_filled = MAT_CODES[2].pos + MAT_CODES[2].len;
+    }
+
+    int rc = mat_emit_current_frame_locked(m);
+    mat_reset_packer_locked(m);
+    return rc;
 }
 
 static ssize_t mat_write_truehd_raw_locked(struct mat_stream_out *m, const uint8_t *buf, size_t bytes)
@@ -445,13 +797,14 @@ static ssize_t mat_write_truehd_raw_locked(struct mat_stream_out *m, const uint8
         consumed += take;
 
         size_t pos = 0;
-        while (m->thd_acc_len - pos >= 8) {
+        while (m->thd_acc_len - pos >= 10U) {
             const uint8_t *p = m->thd_acc + pos;
             if (!m->thd_synced) {
-                /* Lock cleanly onto a TrueHD Major Sync (F8 72 6F BA at bytes 4..7) */
-                if (p[4] == 0xF8U && p[5] == 0x72U && p[6] == 0x6FU && p[7] == 0xBAU) {
+                /* Lock cleanly onto a TrueHD Major Sync (F8 72 6F BA at bytes 4..7, 48/96/192 kHz) */
+                if (p[4] == 0xF8U && p[5] == 0x72U && p[6] == 0x6FU && p[7] == 0xBAU &&
+                    ((p[8] >> 4) & 0x08U) == 0U) {
                     size_t au_len = (size_t)(((p[0] & 0x0fU) << 8) | p[1]) * 2U;
-                    if (au_len >= 12 && au_len <= 2560) {
+                    if (au_len >= 28U && au_len <= TRUEHD_MAX_AU_BYTES) {
                         m->thd_synced = 1;
                     } else {
                         m->resync_skips++;
@@ -464,19 +817,23 @@ static ssize_t mat_write_truehd_raw_locked(struct mat_stream_out *m, const uint8
                     continue;
                 }
             }
-            /* TrueHD AU length in 16-bit words is in bits [11:0] of first 2 bytes */
+            /* TrueHD AU length in 16-bit words is in bits [11:0] of first 2 bytes (up to 8,190 B) */
             size_t au_len = (size_t)(((p[0] & 0x0fU) << 8) | p[1]) * 2U;
-            if (au_len < 4 || au_len > 2560) {
-                /* Lost sync: re-lock on next Major Sync */
+            if (au_len < 8U || au_len > TRUEHD_MAX_AU_BYTES) {
+                /* Lost sync: reset MAT packer alignment and re-lock on next Major Sync */
                 m->thd_synced = 0;
+                m->thd_prev_size = 0;
+                m->thd_output_timing_valid = 0;
+                m->mat_filled = 0;
+                memset(m->mat_buf, 0, MAT_FRAME_BYTES);
                 m->resync_skips++;
                 pos++;
                 continue;
             }
             if (m->thd_acc_len - pos < au_len)
-                break; /* wait for more bytes */
+                break; /* wait for complete AU bytes */
 
-            int rc = mat_push_truehd_au_locked(m, p, au_len);
+            int rc = mat_pack_truehd_au_locked(m, p, au_len);
             if (rc != 0)
                 return rc;
             pos += au_len;
@@ -490,6 +847,7 @@ static ssize_t mat_write_truehd_raw_locked(struct mat_stream_out *m, const uint8
         } else if (m->thd_acc_len == TRUEHD_ACC_MAX) {
             /* Prevent stall on corrupt input */
             m->thd_acc_len = 0;
+            m->thd_synced = 0;
         }
     }
     return (ssize_t)bytes;
@@ -523,7 +881,24 @@ static int mat_standby(struct audio_stream *s)
     pthread_mutex_unlock(&m->lock);
     return 0;
 }
-static int mat_dump(const struct audio_stream *s, int fd) { (void)s; (void)fd; return 0; }
+static int mat_dump(const struct audio_stream *s, int fd)
+{
+    struct mat_stream_out *m = (struct mat_stream_out *)s;
+    pthread_mutex_lock(&m->lock);
+    uint64_t pres = mat_calc_presented_locked(m, now_monotonic_ns());
+    dprintf(fd, "  TCL eARC MAT Bypass Stream (%s):\n",
+            m->is_raw_truehd ? "DOLBY_TRUEHD_RAW -> MAT 2.0" : "IEC61937_MAT");
+    dprintf(fd, "    rate=%u ch=0x%x fd=%d started=%d sync_offset_ms=%d\n",
+            m->sample_rate, m->channel_mask, m->fd, m->started, mat_get_pipe_delay_ms());
+    dprintf(fd, "    written_frames=%llu presented_frames=%llu mat_bursts=%u skips=%u\n",
+            (unsigned long long)m->written_frames, (unsigned long long)pres,
+            m->mat_bursts_emitted, m->resync_skips);
+    dprintf(fd, "    kernel: pumped=%llu q_depth=%u underruns=%u already_ready=%u relocks=%u\n",
+            (unsigned long long)m->hw_consumed_bursts, m->last_k_qdepth,
+            m->last_k_underruns, m->last_k_late, m->last_k_relocks);
+    pthread_mutex_unlock(&m->lock);
+    return 0;
+}
 static uint32_t mat_get_device(const struct audio_stream *s)
 {
     return ((const struct mat_stream_out *)s)->devices;
@@ -617,7 +992,22 @@ static int mat_resume(struct audio_stream_out *s)
 }
 static int mat_drain(struct audio_stream_out *s, int type)
 {
-    (void)s; (void)type;
+    (void)type;
+    struct mat_stream_out *m = (struct mat_stream_out *)s;
+    pthread_mutex_lock(&m->lock);
+
+    mat_flush_partial_tail_locked(m);
+
+    int fd = m->fd;
+    if (fd >= 0) {
+        m->in_write++;
+        pthread_mutex_unlock(&m->lock);
+        fsync(fd);
+        pthread_mutex_lock(&m->lock);
+        m->in_write--;
+    }
+
+    pthread_mutex_unlock(&m->lock);
     return 0;
 }
 static int mat_flush(struct audio_stream_out *s)
@@ -664,6 +1054,26 @@ static char *shim_get_parameters(const struct audio_hw_device *dev, const char *
     return res;
 }
 
+/* Stateless <5 us hardware/ring probe: never conflicts with active stream (-EBUSY treated as active) */
+static int is_earc_mat_ring_available(void)
+{
+    int pfd = open(BYPASS_DEV, O_RDONLY);
+    if (pfd >= 0) {
+        close(pfd);
+        return 1;
+    }
+    if (errno == EACCES || errno == EPERM) {
+        pfd = open(BYPASS_DEV, O_WRONLY);
+        if (pfd >= 0) {
+            close(pfd);
+            return 1;
+        }
+    }
+    if (errno == EBUSY)
+        return 1; /* Another MAT stream is currently open -> eARC MAT ring IS active */
+    return 0;
+}
+
 static int shim_open_output_stream(struct audio_hw_device *dev, int handle,
                                    uint32_t devices, int flags,
                                    struct audio_config *config,
@@ -674,18 +1084,19 @@ static int shim_open_output_stream(struct audio_hw_device *dev, int handle,
                       config->sample_rate == MAT_SAMPLE_RATE);
     int is_truehd  = (config && config->format == AUDIO_FORMAT_DOLBY_TRUEHD);
 
+    if (is_truehd && config->sample_rate != 0U && (config->sample_rate % 48000U) != 0U) {
+        ALOGW("TrueHD non-48kHz-family rate=%u -> falling back to stock HAL", config->sample_rate);
+        return g_orig_open_output_stream(dev, handle, devices, flags, config, stream_out, address);
+    }
+
     if (is_iec_mat || is_truehd) {
-        /* For raw TrueHD, probe /dev/earc_mat_bypass (~20-40ms): if eARC MAT ring is inactive
+        /* For raw TrueHD, run stateless O_RDONLY probe (<5 us): if eARC MAT ring is inactive
            (e.g. TV on Pass through / TV speakers / soundbar off), fall back cleanly to stock HAL.
            For IEC61937, never fall back since stock vendor HAL does not support IEC61937. */
-        if (is_truehd) {
-            int probe_fd = open(BYPASS_DEV, O_WRONLY);
-            if (probe_fd < 0) {
-                ALOGW("eARC MAT ring inactive (%s) for DOLBY_TRUEHD_RAW -> falling back to stock HAL",
-                      strerror(errno));
-                return g_orig_open_output_stream(dev, handle, devices, flags, config, stream_out, address);
-            }
-            close(probe_fd);
+        if (is_truehd && !is_earc_mat_ring_available()) {
+            ALOGW("eARC MAT ring inactive (%s) for DOLBY_TRUEHD_RAW -> falling back to stock HAL",
+                  strerror(errno));
+            return g_orig_open_output_stream(dev, handle, devices, flags, config, stream_out, address);
         }
 
         ALOGI("INTERCEPT open_output_stream: %s rate=%u ch=0x%x dev=0x%x flags=0x%x -> %s",
@@ -696,8 +1107,10 @@ static int shim_open_output_stream(struct audio_hw_device *dev, int handle,
         if (!m)
             return -ENOMEM;
 
+        m->magic = MAT_STREAM_MAGIC;
         pthread_mutex_init(&m->lock, NULL);
         m->fd = -1;
+        m->can_read_status = 1;
         m->is_raw_truehd = is_truehd;
         m->sample_rate   = config->sample_rate ? config->sample_rate : (is_truehd ? 48000U : MAT_SAMPLE_RATE);
         m->channel_mask  = config->channel_mask ? config->channel_mask : AUDIO_CHANNEL_OUT_7POINT1;
@@ -735,9 +1148,7 @@ static int shim_open_output_stream(struct audio_hw_device *dev, int handle,
         config->format       = m->format;
         config->frame_count  = is_truehd ? 4096U : (MAT_FRAME_BYTES / MAT_BYTES_PER_FRAME);
 
-        pthread_mutex_lock(&g_active_lock);
-        g_active_mat = m;
-        pthread_mutex_unlock(&g_active_lock);
+        register_shim_stream(m);
 
         *stream_out = &m->stream;
         return 0;
@@ -748,21 +1159,17 @@ static int shim_open_output_stream(struct audio_hw_device *dev, int handle,
 
 static void shim_close_output_stream(struct audio_hw_device *dev, struct audio_stream_out *out)
 {
-    pthread_mutex_lock(&g_active_lock);
-    if (g_active_mat && out == &g_active_mat->stream) {
-        struct mat_stream_out *m = g_active_mat;
-        g_active_mat = NULL;
-        pthread_mutex_unlock(&g_active_lock);
-
+    struct mat_stream_out *m = unregister_shim_stream(out);
+    if (m) {
         pthread_mutex_lock(&m->lock);
         mat_close_fd_locked(m);
         pthread_mutex_unlock(&m->lock);
+        m->magic = 0;
         pthread_mutex_destroy(&m->lock);
         free(m);
         ALOGI("closed intercepted MAT/TrueHD stream");
         return;
     }
-    pthread_mutex_unlock(&g_active_lock);
 
     g_orig_close_output_stream(dev, out);
 }
@@ -798,7 +1205,7 @@ static int shim_open(const struct hw_module_t *module, const char *id, struct hw
     adev->open_output_stream  = shim_open_output_stream;
     adev->close_output_stream = shim_close_output_stream;
 
-    ALOGI("READY: wrapped %s (IEC61937 + DOLBY_TRUEHD_RAW -> MAT 2.0 -> %s)",
+    ALOGI("READY: wrapped %s (IEC61937 + dynamic MAT 2.0 DOLBY_TRUEHD_RAW -> %s)",
           ORIG_HAL_PATH, BYPASS_DEV);
     return 0;
 }

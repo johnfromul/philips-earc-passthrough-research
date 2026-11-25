@@ -15,16 +15,17 @@ module (`/data/adb/modules/tcl_earc_mat_bypass/`):
   DDR ring (`0x2249C000..0x22640000`, `28 × 61,440` bytes = `560 ms`) every `20.000 ms`, and `SE DSP` continuously
   streams that ring to `eARC TX` (`0x951115 = 0x25`). Our bypass skips `DEC-R2` completely and feeds untouched TrueHD
   Atmos MAT 2.0 bursts directly into that ring.
-- **Kernel driver ([`native/tcl_earc_mat.c`](native/tcl_earc_mat.c) → `/dev/earc_mat_bypass`):** 32-frame (`640 ms`)
-  lock-free SPSC jitter buffer + dedicated `kthread` (`0.25 ms` hrtimer polling via `usleep_range_state`) synchronized
-  to `DEC-R2`'s live 20.000 ms slot cadence. Uses `write_iter` + core-kernel `_copy_from_iter` (`ARM64_SW_TTBR0_PAN`
-  safe) and accepts arbitrary write sizes.
+- **Kernel driver ([`native/tcl_earc_mat.c`](native/tcl_earc_mat.c) → `/dev/earc_mat_bypass`):** 8-frame (`160 ms`)
+  lock-free SPSC jitter buffer with binary completion wakeup, `fsync` end-of-stream drain, non-exclusive `O_RDONLY`
+  probe/telemetry (`frames_out` + `ktime_get()` monotonic timestamps), Vivaldi RIU + multi-slot MAT ring guards, and a
+  dedicated `SCHED_FIFO` `kthread` (`earc_mat_pump`) phase-locked to `DEC-R2`'s live 20.000 ms slot cadence.
 - **Audio HAL shim ([`native/audio_primary_merak_shim.c`](native/audio_primary_merak_shim.c) →
   `/vendor/lib/hw/audio.primary.merak.so`):** Wraps the stock 32-bit vendor HAL in-place, intercepts **both**
   `AUDIO_FORMAT_IEC61937` (192 kHz 7.1 MAT — Kodi `AudioTrack (IEC)`, AudioProbe) **and** `AUDIO_FORMAT_DOLBY_TRUEHD`
-  (raw TrueHD — Moonfin, Jellyfin, Plex, Stremio, ExoPlayer, packed live `24 AUs → 61,440-byte` bit-exact MAT 2.0
-  bursts) into `/dev/earc_mat_bypass` with `CLOCK_MONOTONIC` presentation timestamps for A/V lip-sync. All other
-  streams (PCM, AC3, E-AC-3, DTS, UI, mic) pass straight through to the stock HAL untouched.
+  (raw 48/96/192 kHz TrueHD — Moonfin, Jellyfin, Plex, Stremio, ExoPlayer, dynamically packed via IEC 61937-9 / MAT 2.0
+  `input_timing` & `output_timing` into bit-exact 61,440-byte MAT 2.0 bursts, including UHD Blu-ray peak AUs > 2,560 B)
+  into `/dev/earc_mat_bypass` with hardware-clocked `CLOCK_MONOTONIC` presentation timestamps and multi-stream tracking.
+  All other streams (PCM, AC3, E-AC-3, DTS, UI, mic) pass straight through to the stock HAL untouched.
 - **Audio Policy + `libaudioclient.so` ([`tools/patch_tcl_audio_stack.py`](tools/patch_tcl_audio_stack.py)):** Exposes
   `direct_iec61937 output` on `HDMI EARC` (preserving all dynamic EDID profiles via `AUDIO_FORMAT_DEFAULT`) and removes
   TCL's 5 hardcoded `/system/bin/mediaserver` package-name blocks in `/system/lib/libaudioclient.so`.
