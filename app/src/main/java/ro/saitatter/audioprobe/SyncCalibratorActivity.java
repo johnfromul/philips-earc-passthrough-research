@@ -201,30 +201,32 @@ public final class SyncCalibratorActivity extends Activity implements Choreograp
         audioThread = new Thread(() -> {
             File dir = getExternalFilesDir(null);
             if (dir == null) dir = getFilesDir();
-            File iecFile = new File(dir, "truehd.iec");
-            if (!iecFile.exists()) {
-                runOnUiThread(() -> updateLabels("ERROR: missing " + iecFile.getAbsolutePath()));
+            File beatFile = new File(dir, "sync_beat.iec");
+            if (!beatFile.exists()) {
+                runOnUiThread(() -> updateLabels("ERROR: missing " + beatFile.getAbsolutePath()));
                 return;
             }
 
-            byte[][] activeFrames = new byte[ACTIVE_BURSTS][MAT_BYTES];
-            try (FileInputStream fis = new FileInputStream(iecFile)) {
-                // Skip first 10 frames (0.2s) to hit loud audio in truehd.iec
-                long skip = fis.skip(10L * MAT_BYTES);
-                if (skip < 0) skip = 0;
-                for (int i = 0; i < ACTIVE_BURSTS; i++) {
-                    int off = 0;
-                    while (off < MAT_BYTES) {
-                        int n = fis.read(activeFrames[i], off, MAT_BYTES - off);
-                        if (n <= 0) break;
-                        off += n;
-                    }
+            byte[] loopBuf;
+            int totalBursts;
+            try (FileInputStream fis = new FileInputStream(beatFile)) {
+                int len = (int) beatFile.length();
+                totalBursts = len / MAT_BYTES;
+                if (totalBursts <= 0) {
+                    runOnUiThread(() -> updateLabels("ERROR: sync_beat.iec is empty"));
+                    return;
+                }
+                loopBuf = new byte[totalBursts * MAT_BYTES];
+                int off = 0;
+                while (off < loopBuf.length) {
+                    int n = fis.read(loopBuf, off, loopBuf.length - off);
+                    if (n <= 0) break;
+                    off += n;
                 }
             } catch (Exception e) {
-                runOnUiThread(() -> updateLabels("ERROR reading truehd.iec: " + e.getMessage()));
+                runOnUiThread(() -> updateLabels("ERROR reading sync_beat.iec: " + e.getMessage()));
                 return;
             }
-            byte[] silentFrame = buildSilenceMatFrame();
 
             try {
                 AudioFormat fmt = new AudioFormat.Builder()
@@ -244,19 +246,16 @@ public final class SyncCalibratorActivity extends Activity implements Choreograp
                     .build();
                 track = t;
                 t.play();
-                runOnUiThread(() -> updateLabels("Playing 1 Hz TrueHD Atmos beat — press OK on beat, or LEFT/RIGHT to tune ±10 ms"));
+                runOnUiThread(() -> updateLabels("Playing continuous TrueHD 1 Hz beep — hit OK on beep, or LEFT/RIGHT ±10 ms"));
 
                 int burstIdx = 0;
                 while (running) {
-                    // Place the audio beat at phase=0.5 (burstIdx 25..30) so the marker crosses CENTER on the beat!
-                    boolean isBeat = (burstIdx >= 25 && burstIdx < 25 + ACTIVE_BURSTS);
-                    byte[] frame = isBeat ? activeFrames[burstIdx - 25] : silentFrame;
-                    int written = t.write(frame, 0, MAT_BYTES, AudioTrack.WRITE_BLOCKING);
+                    int written = t.write(loopBuf, burstIdx * MAT_BYTES, MAT_BYTES, AudioTrack.WRITE_BLOCKING);
                     if (written < 0) {
                         Log.w(TAG, "AudioTrack write error: " + written);
                         Thread.sleep(50);
                     }
-                    burstIdx = (burstIdx + 1) % BURSTS_PER_BEAT;
+                    burstIdx = (burstIdx + 1) % totalBursts;
                 }
             } catch (Exception e) {
                 Log.e(TAG, "Audio error", e);
