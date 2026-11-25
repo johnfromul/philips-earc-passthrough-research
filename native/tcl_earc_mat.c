@@ -37,6 +37,9 @@ extern struct task_struct *kthread_create_on_node(int (*threadfn)(void *data),
                                                   void *data, int node,
                                                   const char namefmt[], ...);
 extern int wake_up_process(struct task_struct *p);
+extern void __init_swait_queue_head(void *q, const char *name, void *key);
+extern void complete(void *x);
+extern unsigned long wait_for_completion_timeout(void *x, unsigned long timeout);
 extern u8 arm64_use_ng_mappings;
 
 __attribute__((section(".plt"), used)) void __plt_stub(void) {}
@@ -69,6 +72,15 @@ static u32 g_partial;
 static volatile int g_open;
 static volatile int g_stop_req;
 static volatile int g_thread_alive;
+static int g_prelocked;
+
+struct v670_completion {
+    u32 done;
+    u32 pad;
+    u8  swait_head[128];
+};
+static struct v670_completion g_space_comp;
+static u8 g_lock_key[16];
 
 static u32 g_base_off;
 static u32 g_next_slot;
@@ -121,7 +133,7 @@ static void ring_write_slot(u32 s, const u8 *src)
     __asm__ volatile("dmb ishst" ::: "memory");
 }
 
-static int lock_onto_ring(void)
+static int lock_onto_ring_timeout(u32 max_ticks)
 {
     g_base_off = 0xffffffffU;
     for (u32 off = 0; off < (u32)SLOT_SIZE; off += 4U) {
@@ -137,7 +149,7 @@ static int lock_onto_ring(void)
         ring_write32(slot_end_off(s), SENTINEL);
     __asm__ volatile("dmb ishst" ::: "memory");
 
-    for (u32 t = 0; t < 300 && !g_stop_req; t++) {
+    for (u32 t = 0; t < max_ticks && !g_stop_req; t++) {
         usleep_range_state(200, 300, TASK_UNINTERRUPTIBLE);
         __asm__ volatile("dmb ishld" ::: "memory");
         for (u32 s = 0; s < NUM_SLOTS; s++) {
@@ -164,12 +176,17 @@ static int lock_onto_ring(void)
 static int mat_pump_thread(void *arg)
 {
     (void)arg;
-    int locked = 0;
+    int locked = g_prelocked;
     int started = 0;
+
+    if (locked) {
+        _printk("\0016[tcl_earc_mat] pump locked: base_off=0x%x next_slot=%u\n",
+                g_base_off, g_next_slot);
+    }
 
     while (!g_stop_req) {
         if (!locked) {
-            if (lock_onto_ring() == 0) {
+            if (lock_onto_ring_timeout(200) == 0) {
                 locked = 1;
                 _printk("\0016[tcl_earc_mat] pump locked: base_off=0x%x next_slot=%u\n",
                         g_base_off, g_next_slot);
@@ -213,6 +230,7 @@ static int mat_pump_thread(void *arg)
             ring_write_slot(g_next_slot, src);
             __asm__ volatile("dmb ishst" ::: "memory");
             g_q_tail = tail + 1U;
+            complete(&g_space_comp);
             g_frames_out++;
             started = 1;
         } else if (started) {
@@ -256,11 +274,25 @@ static int dev_open(struct inode *inode, struct file *filp)
     g_already_ready = 0;
     g_relocks = 0;
     g_stop_req = 0;
+    g_prelocked = 0;
+    g_space_comp.done = 0;
+    __asm__ volatile("dmb ishst" ::: "memory");
+
+    /* Fast ~40ms probe: fail with -ENODEV immediately if eARC MAT ring is inactive
+       (e.g. TV on Pass through / TV speakers / soundbar off) so HAL shim can fall back cleanly. */
+    if (lock_onto_ring_timeout(160) != 0) {
+        _printk("\0016[tcl_earc_mat] open rejected: eARC MAT ring inactive (-ENODEV)\n");
+        g_open = 0;
+        return -19; /* -ENODEV */
+    }
+    g_prelocked = 1;
     g_thread_alive = 1;
     __asm__ volatile("dmb ishst" ::: "memory");
 
     struct task_struct *t = kthread_create_on_node(mat_pump_thread, 0, NUMA_NO_NODE, "earc_mat_pump");
     if ((unsigned long)t >= (unsigned long)-4095L) {
+        if (ring_read32(slot_end_off(g_next_slot)) == SENTINEL)
+            ring_write32(slot_end_off(g_next_slot), 0);
         g_thread_alive = 0;
         g_open = 0;
         return (int)(long)t;
@@ -277,6 +309,7 @@ static int dev_release(struct inode *inode, struct file *filp)
     /* Stop immediately on close() so pause/seek silences within <20ms */
     g_stop_req = 1;
     __asm__ volatile("dmb ishst" ::: "memory");
+    complete(&g_space_comp);
 
     for (u32 w = 0; w < 200; w++) {
         __asm__ volatile("dmb ishld" ::: "memory");
@@ -297,15 +330,14 @@ static ssize_t dev_write_iter(struct kiocb *iocb, struct iov_iter *from)
     size_t total = 0;
 
     while (1) {
-        u32 wait_ms = 0;
         while ((u32)(g_q_head - g_q_tail) >= Q_SLOTS) {
-            usleep_range_state(2000, 3000, TASK_INTERRUPTIBLE);
+            /* Zero-polling sleep until earc_mat_pump frees a slot (500ms timeout = 125 jiffies @ HZ=250) */
+            unsigned long rem = wait_for_completion_timeout(&g_space_comp, 125);
             __asm__ volatile("dmb ishld" ::: "memory");
             if (!g_thread_alive)
                 return total ? (ssize_t)total : -19;
-            wait_ms += 2;
-            if (wait_ms >= 500)
-                return total ? (ssize_t)total : -110; /* -ETIMEDOUT: eARC MAT ring inactive */
+            if (rem == 0 && (u32)(g_q_head - g_q_tail) >= Q_SLOTS)
+                return total ? (ssize_t)total : -110; /* -ETIMEDOUT */
         }
 
         u8 *dst = g_q_buf + (u64)(g_q_head & Q_MASK) * SLOT_SIZE + g_partial;
@@ -390,6 +422,9 @@ int init_module(void)
         return -12;
     }
 
+    g_space_comp.done = 0;
+    __init_swait_queue_head(g_space_comp.swait_head, "earc_mat_q", g_lock_key);
+
     int rc = misc_register(&earc_miscdev);
     if (rc) {
         vfree(g_q_buf);
@@ -445,6 +480,9 @@ static const struct modversion_info ____versions[] = {
     { 0x4efa65a3ULL, "_copy_from_iter" },
     { 0x96517739ULL, "kthread_create_on_node" },
     { 0xb268478cULL, "wake_up_process" },
+    { 0x608741b5ULL, "__init_swait_queue_head" },
+    { 0xa6257a2fULL, "complete" },
+    { 0x4a3ad70eULL, "wait_for_completion_timeout" },
 };
 
 __attribute__((section(".modinfo"), used)) static const char __mi1[] = "license=GPL";

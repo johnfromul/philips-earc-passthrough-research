@@ -337,10 +337,16 @@ static int mat_write_all_locked(struct mat_stream_out *m, const uint8_t *p, size
     return 0;
 }
 
-/* Copy TrueHD AU bytes into MAT payload with 16-bit LE byte swap */
+/* Copy TrueHD AU bytes into MAT payload with 16-bit LE byte swap (32-bit rev16 fast path) */
 static void copy_swap16(uint8_t *dst, const uint8_t *src, size_t len)
 {
     size_t i = 0;
+    for (; i + 4 <= len; i += 4) {
+        uint32_t v;
+        memcpy(&v, src + i, 4);
+        v = ((v & 0x00ff00ffU) << 8) | ((v & 0xff00ff00U) >> 8);
+        memcpy(dst + i, &v, 4);
+    }
     for (; i + 1 < len; i += 2) {
         dst[i]     = src[i + 1];
         dst[i + 1] = src[i];
@@ -619,6 +625,16 @@ static int shim_open_output_stream(struct audio_hw_device *dev, int handle,
     int is_truehd  = (config && config->format == AUDIO_FORMAT_DOLBY_TRUEHD);
 
     if (is_iec_mat || is_truehd) {
+        /* Probe /dev/earc_mat_bypass (~20-40ms): if eARC MAT ring is inactive (e.g. TV on
+           Pass through, TV speakers, or soundbar off), fall back cleanly to stock HAL. */
+        int probe_fd = open(BYPASS_DEV, O_WRONLY);
+        if (probe_fd < 0) {
+            ALOGW("eARC MAT ring inactive (%s) for %s -> falling back to stock HAL",
+                  strerror(errno), is_truehd ? "DOLBY_TRUEHD_RAW" : "IEC61937_MAT");
+            return g_orig_open_output_stream(dev, handle, devices, flags, config, stream_out, address);
+        }
+        close(probe_fd);
+
         ALOGI("INTERCEPT open_output_stream: %s rate=%u ch=0x%x dev=0x%x flags=0x%x -> %s",
               is_truehd ? "DOLBY_TRUEHD_RAW" : "IEC61937_MAT",
               config->sample_rate, config->channel_mask, devices, flags, BYPASS_DEV);
