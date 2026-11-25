@@ -268,6 +268,22 @@ static inline void signal_binary_comp(struct v670_completion *c)
         complete(c);
 }
 
+#ifdef EARC_MAT_TRACE_SYNC
+/* V670 stock debug handler logs the DSP SRAM read in the kernel log. */
+extern u8 MApi_AUDIO_offload_Debug_Cmd_Write(char *cmd, u32 len);
+
+static void trace_sync_slot(u32 slot)
+{
+    char cmd[64] = "read_dsp_sram_type=1 addr=0x1113 len=1\n";
+    s64 before = ktime_get();
+    _printk("\0016[tcl_earc_mat] sync probe slot=%u offset=0x%x mono_ns=%lld\n",
+            slot, slot_start_off(slot), (long long)before);
+    int rc = MApi_AUDIO_offload_Debug_Cmd_Write(cmd, sizeof(cmd));
+    _printk("\0016[tcl_earc_mat] sync probe end rc=%d elapsed_ns=%lld\n", rc,
+            (long long)(ktime_get() - before));
+}
+#endif
+
 static int lock_onto_ring_timeout(u32 max_ticks)
 {
     if (!earc_hw_npcm_active())
@@ -293,6 +309,9 @@ static int lock_onto_ring_timeout(u32 max_ticks)
                         ring_write32(slot_end_off(k), 0);
                 }
                 dsp_wmb();
+#ifdef EARC_MAT_TRACE_SYNC
+                trace_sync_slot(s);
+#endif
                 return 0;
             }
         }
