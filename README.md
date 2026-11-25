@@ -5,13 +5,15 @@ This project routes Dolby TrueHD, including TrueHD with Atmos metadata, from int
 ## Playback path
 
 ```text
-Android app → direct 48 kHz TrueHD AudioTrack → Philips HAL wrapper
-                                                   ├─ stock HAL → maintains active eARC carrier
-                                                   └─ accepted TrueHD bytes → MAT packer
-                                                        → kernel queue → DSP ring → eARC → receiver
+Internal app → direct HDMI eARC AudioTrack → Philips HAL wrapper
+    Raw TrueHD (48 kHz)     → MAT packer → kernel queue → DSP ring → receiver
+    IEC 61937 (192 kHz 7.1) → original MAT bursts → kernel queue → DSP ring → receiver
+
+Both paths keep a stock Philips TrueHD stream active to maintain the eARC carrier.
+The IEC path extracts raw TrueHD for that stock stream.
 ```
 
-The wrapper targets the system audio HAL, so any internal app can use this route if it opens a compatible raw TrueHD output on HDMI eARC. Kodi and a standalone Android AudioTrack probe were verified. Dolby Digital Plus Atmos, AC-3, and PCM use the stock path.
+The wrapper targets the system audio HAL, so any internal app can use this route if it opens a supported raw TrueHD or IEC 61937 MAT output on HDMI eARC. Kodi and a standalone Android AudioTrack probe were verified. Dolby Digital Plus Atmos, AC-3, and PCM use the stock path.
 
 ## Design shared with the upstream project
 
@@ -28,20 +30,20 @@ Upstream attribution and source history are available in the [original TCL proje
 | eARC carrier | The first wrapper replaced the original output stream. On the OLED909, the MAT carrier became unavailable during playback, even after selecting **Multichannel (bypass)**. The Philips wrapper now opens and retains the original HAL stream, forwards each write to it, and feeds only the bytes it accepted into the MAT packer. The original stream continues to provide the playback clock. |
 | Ring and kernel ABI | The driver maps the measured Philips physical ring at `[0x94596800, 0x9473a800)`, with 28 slots of `0xf000` bytes. The port uses Philips kernel layout offsets and kernel symbol version CRCs. The stock kernel rejected an initial telemetry implementation due to a symbol CRC mismatch. The driver uses the verified `simple_read_from_buffer` interface for telemetry. |
 | Write timing | The worker uses a marker in the final padding word at offset `0xeffc` to detect completion of a stock slot write. It skips the slot if the marker transition was observed across a polling gap greater than 700 µs. Skipped slots, underruns, and resynchronization can be investigated through the driver counters. |
-| Routing and formats | The Philips wrapper targets raw `AUDIO_FORMAT_DOLBY_TRUEHD` at 48 kHz on HDMI eARC. The original audio policy and `libaudioclient.so` are used. A separate direct IEC 61937 AudioTrack test failed to initialize, so apps relying on that route need further Philips-specific work. |
-| Audio service restart | During live development, restarting the audio HAL lost the receiver capabilities and reset the HAL's live output mode to PCM, although the saved UI setting still showed bypass. Re-negotiating eARC and reapplying bypass restored the live route. With Magisk deployment, the verified boot negotiated the capabilities and used the saved bypass mode automatically. |
+| Routing and formats | The original Philips policy lacked a direct IEC 61937 profile. Adding the route exposed it, but the stock HAL rejected 192 kHz IEC output with `EINVAL`. The port now exposes a 192 kHz 7.1 IEC profile and opens a stock TrueHD stream to keep the carrier active. It extracts 48 kHz TrueHD access units for that stream and sends the original MAT bursts to the kernel driver. This route works with the original `libaudioclient.so` on firmware 214. |
+| Audio service restart | During live development, restarting the audio HAL lost the receiver capabilities and reset the HAL's live output mode to PCM, although the saved UI setting still showed bypass. Re-negotiating eARC and reapplying bypass restored the live route. With Magisk deployment, the TV can negotiate capabilities and restore bypass at boot. Android must also select HDMI for media playback through HDMI System Audio. |
 
 ## Source and deployment
 
-- [HAL wrapper](tpm231ww-earc/audio-hal.c) intercepts the raw TrueHD writes and packs MAT bursts.
+- [HAL wrapper](tpm231ww-earc/audio-hal.c) packs raw TrueHD and forwards prepacked IEC MAT bursts.
 - [Kernel driver](tpm231ww-earc/kernel.c), [ABI layout](tpm231ww-earc/kernel-abi.h), and [symbol CRCs](tpm231ww-earc/versions.inc) target the verified Philips firmware.
-- [Magisk scripts](magisk/philips_tpm231ww_earc/) check the kernel release and stock HAL and driver hashes. The installer copies the original HAL directly from the television. The boot script loads the kernel module and limits the device node to the audio user and group.
+- [Magisk scripts](magisk/philips_tpm231ww_earc/) check the kernel release and stock HAL, policy, and driver hashes. The installer copies the original HAL and generates the IEC profile from the verified stock policy on the television. The boot script loads the kernel module and limits the device node to the audio user and group.
 
 ### Install the prebuilt Magisk module
 
-Use the prebuilt ZIP on a rooted Philips TV running Magisk with the verified TPM231WW firmware 214 audio stack. The installer checks the kernel release and the SHA-256 hashes of the original audio HAL and sound driver. If a check fails, use the matching firmware or validate a separate port for that build.
+Use the prebuilt ZIP on a rooted Philips TV running Magisk with the verified TPM231WW firmware 214 audio stack. The installer checks the kernel release and the SHA-256 hashes of the original audio HAL, audio policy, and sound driver. If a check fails, use the matching firmware or validate a separate port for that build.
 
-1. Download [philips-tpm231ww-earc-magisk.zip](https://github.com/johnfromul/philips-earc-passthrough-research/releases/download/v0.1.0/philips-tpm231ww-earc-magisk.zip) from [Release v0.1.0](https://github.com/johnfromul/philips-earc-passthrough-research/releases/tag/v0.1.0). Remove any temporary runtime HAL overlay before installing so that the installer can read the original HAL from the TV.
+1. Download [philips-tpm231ww-earc-magisk.zip](https://github.com/johnfromul/philips-earc-passthrough-research/releases/download/v0.2.0/philips-tpm231ww-earc-magisk.zip) from [Release v0.2.0](https://github.com/johnfromul/philips-earc-passthrough-research/releases/tag/v0.2.0). Remove any temporary runtime HAL overlay before installing so that the installer can read the original HAL from the TV.
 2. Copy the ZIP to the TV. In Magisk, select **Modules → Install from storage**, choose the ZIP, and reboot when the installation finishes.
 3. In Philips audio settings, select **HDMI sound system**, **eARC → Automatic**, and **Digital output format → Multichannel (bypass)**. In Kodi, enable audio passthrough and TrueHD support.
 4. Play a known TrueHD Atmos track from an internal app. On the receiver, check the **input signal** for **Dolby Atmos – TrueHD**. The Magisk boot log should also report that the driver is ready.
@@ -51,6 +53,13 @@ With an already connected and authorized ADB session, the boot checks are:
 ```sh
 adb shell su -c 'cat /data/adb/modules/philips_tpm231ww_earc/boot.log'
 adb shell su -c 'ls -lZ /dev/earc_mat_bypass'
+```
+
+If the receiver is connected but Android still routes media to the TV speakers, reselect **HDMI sound system**. Check that **HDMI System Audio** is active. On the test setup, the following Android HDMI command restored routing after a reboot where the TV menu and the Android media strategy disagreed:
+
+```sh
+adb shell su -c 'cmd hdmi_control setsystemaudiomode on'
+adb shell su -c 'dumpsys hdmi_control | grep mSystemAudioActivated'
 ```
 
 To restore stock audio, disable the module in Magisk and reboot.
@@ -116,6 +125,6 @@ Install `magisk/philips-tpm231ww-earc-magisk.zip` using the same Magisk steps ab
 | Standalone Android AudioTrack app, synthetic 48 kHz TrueHD 5.1 | **Dolby Audio – TrueHD** |
 | Dolby reference Dolby Digital Plus Atmos clip | **Dolby Atmos – DD+** via the stock path |
 | Kodi, *Deadpool 2*, Czech AC-3 5.1 | **Dolby Audio – DD** |
-| Direct IEC 61937 AudioTrack | Direct support was unadvertised and Android failed to initialize the track. The PCM control initialized. |
+| Direct IEC 61937, 192 kHz 7.1, from an independent AudioTrack app | Android advertised direct playback, the track opened on HDMI eARC, and Denon reported **Dolby Atmos – TrueHD** for a TrueHD Atmos clip. The synthetic control reported **Dolby Audio – TrueHD**. |
 
-In a 32-second development test, the receiver reported TrueHD Atmos in 40 of 42 status samples and reported Dolby Atmos without the TrueHD qualifier in the other two. The driver logged 1,799 frames written by stream close, 17 skipped write windows, zero queue underruns, and one relock. These results establish receiver recognition and short playback sessions. Sustained playback stability, bit-for-bit transport at the receiver, and A/V synchronization remain unverified.
+In a 32-second development test, the receiver reported TrueHD Atmos in 40 of 42 status samples and reported Dolby Atmos without the TrueHD qualifier in the other two. The driver logged 1,799 frames written by stream close, 17 skipped write windows, zero queue underruns, and one relock. These results establish receiver recognition and short playback sessions. Sustained playback stability, bit-for-bit transport at the receiver, and A/V synchronization remain unverified. The IEC profile is for 48 kHz TrueHD in the 192 kHz 7.1 MAT carrier. Other IEC 61937 burst types and hardware A/V sync are outside this profile.

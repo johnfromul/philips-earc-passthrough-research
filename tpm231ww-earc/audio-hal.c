@@ -30,6 +30,7 @@
 #define HARDWARE_HAL_API_VERSION     0x0100
 
 #define AUDIO_FORMAT_DOLBY_TRUEHD    0x0E000000U
+#define AUDIO_FORMAT_IEC61937        0x0D000000U
 #define AUDIO_DEVICE_OUT_HDMI_EARC   0x00040001U
 
 #define MAT_FRAME_BYTES              61440U
@@ -97,13 +98,25 @@ struct hw_device_t {
     int (*close)(struct hw_device_t *device);
 };
 
+struct audio_offload_info {
+    uint16_t version, size;
+    uint32_t sample_rate, channel_mask, format, stream_type, bit_rate;
+    int64_t duration_us;
+    uint8_t has_video, is_streaming;
+    uint32_t bit_width, buffer_size, usage, encapsulation_mode;
+    int32_t content_id, sync_id;
+} __attribute__((aligned(8)));
+
 struct audio_config {
     uint32_t sample_rate;
     uint32_t channel_mask;
     uint32_t format;
-    uint8_t  offload_info[64];
+    struct audio_offload_info offload_info;
     uint32_t frame_count;
 };
+
+_Static_assert(sizeof(struct audio_offload_info) == 64, "offload info ABI");
+_Static_assert(__builtin_offsetof(struct audio_config, frame_count) == 80, "config ABI");
 
 struct audio_stream {
     uint32_t (*get_sample_rate)(const struct audio_stream *stream);
@@ -162,8 +175,11 @@ struct audio_hw_device {
                                     struct audio_stream_out *stream_out);               /* +0x70 */
 };
 
+struct iec_output;
+
 struct mat_stream_out {
     struct audio_stream_out *stream;
+    struct iec_output *iec;
     ssize_t (*write_stock)(struct audio_stream_out *, const void *, size_t);
     int (*standby_stock)(struct audio_stream *);
     int (*pause_stock)(struct audio_stream_out *);
@@ -730,12 +746,18 @@ static int shim_drain(struct audio_stream_out *out, int type)
     return result;
 }
 
+#include "iec-output.h"
+
 static int shim_open_output_stream(struct audio_hw_device *dev, int handle,
                                    uint32_t devices, int flags,
                                    struct audio_config *config,
                                    struct audio_stream_out **stream_out,
                                    const char *address)
 {
+    if (config && config->format == AUDIO_FORMAT_IEC61937 &&
+        devices == AUDIO_DEVICE_OUT_HDMI_EARC)
+        return iec_open(dev, handle, flags, config, stream_out, address);
+
     int tap = config && config->format == AUDIO_FORMAT_DOLBY_TRUEHD &&
               config->sample_rate == 48000U && devices == AUDIO_DEVICE_OUT_HDMI_EARC;
     int rc = g_orig_open_output_stream(dev, handle, devices, flags, config, stream_out, address);
@@ -782,6 +804,10 @@ static void shim_close_output_stream(struct audio_hw_device *dev, struct audio_s
 {
     struct mat_stream_out *m = unregister_shim_stream(out);
     if (m) {
+        if (m->iec) {
+            iec_close(dev, m);
+            return;
+        }
         pthread_mutex_lock(&m->lock);
         out->write = m->write_stock;
         out->common.standby = m->standby_stock;
