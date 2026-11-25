@@ -10,7 +10,7 @@ reversible debloat + custom-launcher setup on the rooted TV.
 V670 with **no HDMI input, no DSP firmware patch, and no boot/DTBO changes**, deployed reversibly via a single Magisk
 module (`/data/adb/modules/tcl_earc_mat_bypass/`):
 
-- **How it works:** Even while idle on Android right from a cold boot (with *Digital Audio Out = Pass through*, zero
+- **How it works:** Even while idle on Android right from a cold boot (with *Digital Audio Out = Auto*, zero
   HDMI ever touched), `DEC-R2` continuously writes silent 61,440-byte IEC61937/MAT 2.0 bursts into the SE DSP Non-PCM
   DDR ring (`0x2249C000..0x22640000`, `28 × 61,440` bytes = `560 ms`) every `20.000 ms`, and `SE DSP` continuously
   streams that ring to `eARC TX` (`0x951115 = 0x25`). Our bypass skips `DEC-R2` completely and feeds untouched TrueHD

@@ -224,10 +224,10 @@ static int mat_pump_thread(void *arg)
         ring_write32(slot_end_off(g_next_slot), SENTINEL);
         __asm__ volatile("dmb ishst" ::: "memory");
 
-        /* DEC-R2 writes every 20.000ms: sleep 16.5ms first to cut hrtimer wakeups by ~85%,
-           then poll at 250us only for the final ~3.5ms window. */
+        /* DEC-R2 writes every 20.000ms: sleep 12ms first to cut hrtimer wakeups by >60%
+           while keeping an ~8ms safety margin so already_ready stays 0 even under UI load. */
         if (!g_stop_req)
-            usleep_range_state(16500, 17000, TASK_UNINTERRUPTIBLE);
+            usleep_range_state(12000, 12500, TASK_UNINTERRUPTIBLE);
     }
 
     if (locked && ring_read32(slot_end_off(g_next_slot)) == SENTINEL) {

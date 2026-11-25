@@ -275,7 +275,9 @@ static int mat_write_all_locked(struct mat_stream_out *m, const uint8_t *p, size
         if (m->fd < 0) {
             int err = errno;
             ALOGE("failed to open %s: %s (%d)", BYPASS_DEV, strerror(err), err);
+            pthread_mutex_unlock(&m->lock);
             usleep(20000);
+            pthread_mutex_lock(&m->lock);
             return -err;
         }
         ALOGI("opened %s for %s stream (rate=%u ch=0x%x base=%llu)",
@@ -283,26 +285,41 @@ static int mat_write_all_locked(struct mat_stream_out *m, const uint8_t *p, size
               m->sample_rate, m->channel_mask, (unsigned long long)m->base_frames);
     }
 
+    int fd = m->fd;
     size_t total = left;
+
+    /* Release m->lock around blocking write() so get_presentation_position/pause/binder never stall */
+    pthread_mutex_unlock(&m->lock);
+    int io_err = 0;
     while (left > 0) {
-        ssize_t w = write(m->fd, p, left);
+        ssize_t w = write(fd, p, left);
         if (w < 0) {
             if (errno == EINTR) continue;
-            ALOGE("write(%s) failed: %s", BYPASS_DEV, strerror(errno));
-            mat_close_fd_locked(m);
-            return -EIO;
+            io_err = errno;
+            break;
         }
         if (w == 0) break;
         p += (size_t)w;
         left -= (size_t)w;
     }
+    pthread_mutex_lock(&m->lock);
 
-    uint64_t bursts_now = (total >= MAT_FRAME_BYTES) ? (total / MAT_FRAME_BYTES) : 1ULL;
-    m->session_bursts += bursts_now;
-    m->started = 1;
-    if (m->session_bursts > KERNEL_Q_BURSTS) {
-        m->hw_consumed_bursts = m->session_bursts - KERNEL_Q_BURSTS;
-        m->last_hw_sync_ns = now_monotonic_ns();
+    if (io_err) {
+        if (m->fd == fd) {
+            ALOGE("write(%s) failed: %s", BYPASS_DEV, strerror(io_err));
+            mat_close_fd_locked(m);
+        }
+        return -EIO;
+    }
+
+    if (m->fd == fd) {
+        uint64_t bursts_now = (total >= MAT_FRAME_BYTES) ? (total / MAT_FRAME_BYTES) : 1ULL;
+        m->session_bursts += bursts_now;
+        m->started = 1;
+        if (m->session_bursts > KERNEL_Q_BURSTS) {
+            m->hw_consumed_bursts = m->session_bursts - KERNEL_Q_BURSTS;
+            m->last_hw_sync_ns = now_monotonic_ns();
+        }
     }
     return 0;
 }
