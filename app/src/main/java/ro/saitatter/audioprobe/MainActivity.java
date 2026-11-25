@@ -50,6 +50,10 @@ public final class MainActivity extends Activity {
         codecInspect=new Button(this);
         codecInspect.setText("Inspect audio codecs — no playback"); codecInspect.setAllCaps(false);
         codecInspect.setOnClickListener(v->runJob(this::inspectAudioCodecs));
+        Button syncCal=new Button(this);
+        syncCal.setText("A/V Sync Calibrator (eARC TrueHD Atmos rhythm test)"); syncCal.setAllCaps(false);
+        syncCal.setOnClickListener(v->startActivity(new android.content.Intent(this,SyncCalibratorActivity.class)));
+        root.addView(syncCal,new LinearLayout.LayoutParams(-1,-2));
         root.addView(codecInspect,new LinearLayout.LayoutParams(-1,-2));
         root.addView(matTunnel,new LinearLayout.LayoutParams(-1,-2));
         TextView previous=new TextView(this); previous.setText("Previous diagnostics (optional)"); root.addView(previous);

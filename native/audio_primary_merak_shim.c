@@ -213,11 +213,13 @@ static void mat_reset_packer_locked(struct mat_stream_out *m)
 }
 
 #define KERNEL_Q_BURSTS              8U /* matches Q_SLOTS=8 in tcl_earc_mat.c */
-#define DEFAULT_PIPE_DELAY_MS        160 /* default SE DSP ring + eARC TX + soundbar MAT delay (ms) */
+#define DEFAULT_PIPE_DELAY_MS        (-120) /* calibrated on C9K + Q85H Pro eARC */
 
 static int mat_get_pipe_delay_ms(void)
 {
     char val[PROP_VALUE_MAX];
+    if (__system_property_get("persist.tcl.earc_sync_ms", val) > 0)
+        return atoi(val);
     if (__system_property_get("debug.earc_sync_ms", val) > 0)
         return atoi(val);
     return DEFAULT_PIPE_DELAY_MS;
