@@ -117,7 +117,10 @@ static volatile u32 g_q_head;
 static volatile u32 g_q_tail;
 static u32 g_partial;
 
+#include "earc_mat_control.h"
 static int g_open;
+static int g_paused;
+static int g_pump_committing;
 static volatile int g_stop_req;
 static volatile int g_thread_alive;
 static int g_prelocked;
@@ -371,7 +374,9 @@ static int mat_pump_thread(void *arg)
 
         u32 tail = __atomic_load_n(&g_q_tail, __ATOMIC_RELAXED);
         u32 head = __atomic_load_n(&g_q_head, __ATOMIC_ACQUIRE);
-        if (tail != head) {
+        __atomic_store_n(&g_pump_committing, 1, __ATOMIC_SEQ_CST);
+        int paused = __atomic_load_n(&g_paused, __ATOMIC_SEQ_CST);
+        if (!paused && tail != head) {
             const u8 *src = g_q_buf + (u64)(tail & Q_MASK) * SLOT_SIZE;
             ring_write_slot(g_next_slot, src);
             u32 next_tail = tail + 1U;
@@ -382,7 +387,7 @@ static int mat_pump_thread(void *arg)
             if (next_tail == head)
                 signal_binary_comp(&g_drain_comp);
             started = 1;
-        } else {
+        } else if (!paused) {
             signal_binary_comp(&g_drain_comp);
             if (started) {
                 /* Leave DEC-R2's silent MAT frame untouched on underrun */
@@ -390,6 +395,7 @@ static int mat_pump_thread(void *arg)
             }
         }
 
+        __atomic_store_n(&g_pump_committing, 0, __ATOMIC_SEQ_CST);
         g_next_slot = (g_next_slot + 1U) % NUM_SLOTS;
         ring_write32(slot_end_off(g_next_slot), SENTINEL);
         dsp_wmb();
@@ -465,6 +471,7 @@ static int dev_open(struct inode *inode, struct file *filp)
     g_q_head = 0;
     g_q_tail = 0;
     g_partial = 0;
+    g_paused = 0;
     g_frames_out = 0;
     g_last_slot_ns = 0;
     g_underruns = 0;
@@ -615,6 +622,19 @@ static ssize_t dev_write_iter(struct kiocb *iocb, struct iov_iter *from)
     return (ssize_t)total;
 }
 
+static long dev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+{
+    (void)arg;
+    if (cmd != EARC_MAT_PAUSE && cmd != EARC_MAT_RESUME)
+        return -25; /* ENOTTY */
+    if (*(void **)((u8 *)filp + FILE_OFF_PRIV) != (void *)1UL)
+        return -9; /* EBADF */
+    __atomic_store_n(&g_paused, cmd == EARC_MAT_PAUSE, __ATOMIC_SEQ_CST);
+    while (cmd == EARC_MAT_PAUSE && __atomic_load_n(&g_pump_committing, __ATOMIC_SEQ_CST))
+        usleep_range_state(100, 200, TASK_IDLE);
+    return 0;
+}
+
 struct v670_module {
     u8 pad0[0x18];
     char name[56];
@@ -635,7 +655,10 @@ struct v670_file_operations {
     u64 write;                                                     /* +0x018 */
     ssize_t (*read_iter)(struct kiocb *, struct iov_iter *);       /* +0x020 */
     ssize_t (*write_iter)(struct kiocb *, struct iov_iter *);      /* +0x028 */
-    u8 pad1[0x70 - 0x30];                                          /* +0x030..+0x06f */
+    u8 pad1[0x50 - 0x30];
+    long (*unlocked_ioctl)(struct file *, unsigned int, unsigned long);
+    long (*compat_ioctl)(struct file *, unsigned int, unsigned long);
+    u8 mmap_fields[0x70 - 0x60];                                          /* +0x030..+0x06f */
     int (*open)(struct inode *, struct file *);                    /* +0x070 */
     u64 flush;                                                     /* +0x078 */
     int (*release)(struct inode *, struct file *);                 /* +0x080 */
@@ -647,6 +670,8 @@ static const struct v670_file_operations earc_fops = {
     .owner      = &__this_module,
     .read_iter  = dev_read_iter,
     .write_iter = dev_write_iter,
+    .unlocked_ioctl = dev_ioctl,
+    .compat_ioctl = dev_ioctl,
     .open       = dev_open,
     .release    = dev_release,
     .fsync      = dev_fsync,

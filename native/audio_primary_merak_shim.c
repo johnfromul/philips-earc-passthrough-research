@@ -31,6 +31,8 @@
 #include <unistd.h>
 #include <android/log.h>
 
+#include <sys/ioctl.h>
+#include "earc_mat_control.h"
 #define LOG_TAG "earc_mat_hal"
 #define ALOGI(...) __android_log_print(ANDROID_LOG_INFO,  LOG_TAG, __VA_ARGS__)
 #define ALOGW(...) __android_log_print(ANDROID_LOG_WARN,  LOG_TAG, __VA_ARGS__)
@@ -200,6 +202,7 @@ struct mat_stream_out {
     struct audio_stream_out stream;
     uint32_t magic;
     pthread_mutex_t lock;
+    pthread_cond_t io_idle;
     int fd;
     int can_read_status;
     int is_raw_truehd;
@@ -222,6 +225,7 @@ struct mat_stream_out {
     uint32_t last_k_late;
     uint32_t last_k_relocks;
     int in_write;                /* >0 while blocking write()/fsync() runs unlocked */
+    int paused;
     int started;
 
     /* Dynamic IEC 61937-9 / Dolby MAT 2.0 input_timing & output_timing packer state */
@@ -338,6 +342,8 @@ static void mat_poll_kernel_status_locked(struct mat_stream_out *m)
 static uint64_t mat_calc_presented_locked(struct mat_stream_out *m, uint64_t now_ns)
 {
     uint64_t pos = m->base_frames;
+    if (m->paused)
+        return m->last_presented;
     if (m->started) {
         mat_poll_kernel_status_locked(m);
 
@@ -373,9 +379,8 @@ static void mat_close_fd_locked(struct mat_stream_out *m)
         pthread_mutex_lock(&m->lock);
     }
     if (m->started) {
-        /* Preserve exact presentation position across pause/standby; align written_frames so drift never accumulates */
-        m->base_frames = mat_calc_presented_locked(m, now_monotonic_ns());
-        m->written_frames = m->base_frames;
+        m->base_frames = m->written_frames;
+        m->last_presented = m->base_frames;
     }
     if (m->fd >= 0) {
         close(m->fd);
@@ -387,6 +392,7 @@ static void mat_close_fd_locked(struct mat_stream_out *m)
               m->mat_bursts_emitted, m->resync_skips,
               m->last_k_underruns, m->last_k_late);
     }
+    m->paused = 0;
     m->started = 0;
     m->session_bursts = 0;
     m->hw_consumed_bursts = 0;
@@ -443,6 +449,7 @@ static int mat_write_all_locked(struct mat_stream_out *m, const uint8_t *p, size
     }
     pthread_mutex_lock(&m->lock);
     m->in_write--;
+    pthread_cond_broadcast(&m->io_idle);
 
     if (io_err) {
         if (m->fd == fd) {
@@ -932,9 +939,15 @@ static int mat_rem_effect(const struct audio_stream *s, void *e) { (void)s; (voi
 /* ---- audio_stream_out callbacks ---- */
 static uint32_t mat_get_latency(const struct audio_stream_out *s)
 {
-    (void)s;
-    int total = (int)(KERNEL_Q_BURSTS * 20U) + mat_get_pipe_delay_ms();
-    return (total > 20) ? (uint32_t)total : 20U;
+    struct mat_stream_out *m = (struct mat_stream_out *)s;
+    pthread_mutex_lock(&m->lock);
+    mat_poll_kernel_status_locked(m);
+    unsigned depth = m->fd < 0 ? 0 : KERNEL_Q_BURSTS;
+    if (m->fd >= 0 && m->can_read_status && m->last_k_qdepth <= KERNEL_Q_BURSTS)
+        depth = m->last_k_qdepth;
+    pthread_mutex_unlock(&m->lock);
+    int total = (int)(depth * 20U) + mat_get_pipe_delay_ms();
+    return total > 0 ? (uint32_t)total : 0;
 }
 static int mat_set_volume(struct audio_stream_out *s, float l, float r)
 {
@@ -946,6 +959,10 @@ static ssize_t mat_write(struct audio_stream_out *s, const void *buffer, size_t 
     struct mat_stream_out *m = (struct mat_stream_out *)s;
     pthread_mutex_lock(&m->lock);
 
+    if (m->paused) {
+        pthread_mutex_unlock(&m->lock);
+        return -EAGAIN;
+    }
     ssize_t ret;
     if (m->is_raw_truehd) {
         ret = mat_write_truehd_raw_locked(m, (const uint8_t *)buffer, bytes);
@@ -981,14 +998,30 @@ static int mat_pause(struct audio_stream_out *s)
 {
     struct mat_stream_out *m = (struct mat_stream_out *)s;
     pthread_mutex_lock(&m->lock);
-    mat_close_fd_locked(m);
+    int rc = 0;
+    /* Let accepted writes finish while the pump can still make space. */
+    while (m->in_write > 0)
+        pthread_cond_wait(&m->io_idle, &m->lock);
+    if (!m->paused && m->fd >= 0 && ioctl(m->fd, EARC_MAT_PAUSE, 0) < 0)
+        rc = -errno;
+    if (!rc && !m->paused) {
+        mat_calc_presented_locked(m, now_monotonic_ns());
+        m->paused = 1;
+    }
     pthread_mutex_unlock(&m->lock);
-    return 0;
+    return rc;
 }
 static int mat_resume(struct audio_stream_out *s)
 {
-    (void)s;
-    return 0;
+    struct mat_stream_out *m = (struct mat_stream_out *)s;
+    pthread_mutex_lock(&m->lock);
+    int rc = 0;
+    if (m->paused && m->fd >= 0 && ioctl(m->fd, EARC_MAT_RESUME, 0) < 0)
+        rc = -errno;
+    if (!rc)
+        m->paused = 0;
+    pthread_mutex_unlock(&m->lock);
+    return rc;
 }
 static int mat_drain(struct audio_stream_out *s, int type)
 {
@@ -996,6 +1029,10 @@ static int mat_drain(struct audio_stream_out *s, int type)
     struct mat_stream_out *m = (struct mat_stream_out *)s;
     pthread_mutex_lock(&m->lock);
 
+    if (m->paused) {
+        pthread_mutex_unlock(&m->lock);
+        return -EAGAIN;
+    }
     mat_flush_partial_tail_locked(m);
 
     int fd = m->fd;
@@ -1005,6 +1042,7 @@ static int mat_drain(struct audio_stream_out *s, int type)
         fsync(fd);
         pthread_mutex_lock(&m->lock);
         m->in_write--;
+        pthread_cond_broadcast(&m->io_idle);
     }
 
     pthread_mutex_unlock(&m->lock);
@@ -1109,6 +1147,7 @@ static int shim_open_output_stream(struct audio_hw_device *dev, int handle,
 
         m->magic = MAT_STREAM_MAGIC;
         pthread_mutex_init(&m->lock, NULL);
+        pthread_cond_init(&m->io_idle, NULL);
         m->fd = -1;
         m->can_read_status = 1;
         m->is_raw_truehd = is_truehd;
@@ -1165,6 +1204,7 @@ static void shim_close_output_stream(struct audio_hw_device *dev, struct audio_s
         mat_close_fd_locked(m);
         pthread_mutex_unlock(&m->lock);
         m->magic = 0;
+        pthread_cond_destroy(&m->io_idle);
         pthread_mutex_destroy(&m->lock);
         free(m);
         ALOGI("closed intercepted MAT/TrueHD stream");
