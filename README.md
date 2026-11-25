@@ -35,12 +35,12 @@ Upstream attribution and source history are available in the [original TCL proje
 
 - [HAL wrapper](tpm231ww-earc/audio-hal.c) intercepts the raw TrueHD writes and packs MAT bursts.
 - [Kernel driver](tpm231ww-earc/kernel.c), [ABI layout](tpm231ww-earc/kernel-abi.h), and [symbol CRCs](tpm231ww-earc/versions.inc) target the verified Philips firmware.
-- [Magisk scripts](tpm231ww-earc/magisk/) check the kernel release and stock HAL and driver hashes. The installer copies the original HAL directly from the television. The boot script loads the kernel module and limits the device node to the audio user and group.
+- [Magisk scripts](magisk/philips_tpm231ww_earc/) check the kernel release and stock HAL and driver hashes. The installer copies the original HAL directly from the television. The boot script loads the kernel module and limits the device node to the audio user and group.
 
 To package the module, supply the compiled 32-bit Android HAL wrapper as `audio.primary.merak.so` and the compiled Philips arm64 kernel module as `philips_earc_mat.ko`:
 
 ```sh
-sh tpm231ww-earc/magisk/package.sh /absolute/path/to/compiled-payloads
+sh magisk/philips_tpm231ww_earc/package.sh /absolute/path/to/compiled-payloads
 ```
 
 Install the generated ZIP in Magisk on the matching firmware, with any live test overlay removed. Set Philips audio output to the HDMI sound system, eARC to **Automatic**, and digital output format to **Multichannel (bypass)**. Enable TrueHD passthrough in the player. Disable the module in Magisk and reboot to restore the stock audio path.

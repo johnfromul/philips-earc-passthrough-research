@@ -1,7 +1,0 @@
-allow untrusted_app audio_device chr_file { getattr open read write ioctl }
-allow untrusted_app_29 audio_device chr_file { getattr open read write ioctl }
-allow untrusted_app_30 audio_device chr_file { getattr open read write ioctl }
-allow untrusted_app_32 audio_device chr_file { getattr open read write ioctl }
-allow platform_app audio_device chr_file { getattr open read write ioctl }
-allow audioserver audio_device chr_file { getattr open read write ioctl }
-allow hal_audio_default audio_device chr_file { getattr open read write ioctl }
