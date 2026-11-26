@@ -36,6 +36,7 @@ extern void sched_set_fifo_low(struct task_struct *);
 #define RING_PHYS 0x94596800UL
 #define QUEUE_SLOTS 8U
 #define MARKER 0x5a17b04dU
+#define REPLACE_WINDOW_NS 700000L
 #define IDLE_TASK 0x402U
 #define FMODE_WRITE 2U
 #define FMODE_STREAM 0x00200000U
@@ -51,11 +52,11 @@ static u64 queue[QUEUE_SLOTS][SLOT_BYTES / sizeof(u64)];
 static struct task_struct *pump_task;
 static u32 head, tail, partial, owner, writing, draining;
 static u64 frames_out, last_slot_ns;
-static u32 underruns, late, relocks;
+static u32 underruns, late, relocks, header_changes;
 
 struct earc_mat_status {
     u64 frames_out, last_slot_mono_ns;
-    u32 q_depth, underruns, already_ready, relocks, ring_active, reserved;
+    u32 q_depth, underruns, already_ready, relocks, ring_active, header_changes;
 };
 
 static u32 acquire(u32 *value) { return __atomic_load_n(value, __ATOMIC_ACQUIRE); }
@@ -129,25 +130,27 @@ static s64 synchronize(void)
     return 0;
 }
 
-static s64 await_slot(u32 slot, s64 previous, int *in_time)
+static s64 await_slot(u32 slot, s64 previous, s64 *replace_before)
 {
     s64 sleep_us = (previous + 14500000L - ktime_get()) / 1000;
     if (sleep_us > 300)
         usleep_range_state((u64)sleep_us - 250, (u64)sleep_us, IDLE_TASK);
-    s64 checked = ktime_get();
-    int seen_marker = 0;
+    s64 marker_sample_started = 0;
     const s64 deadline = previous + 24000000L;
-    while (!kthread_should_stop() && ktime_get() < deadline) {
-        s64 now = ktime_get();
+    while (!kthread_should_stop()) {
+        s64 sample_started = ktime_get();
+        if (sample_started >= deadline)
+            break;
         u32 value = read_word(end_at(slot));
         if (value == 0) {
-            *in_time = seen_marker && now - checked <= 700000L;
-            return now;
+            /* Use the last marker observation as the conservative time bound. */
+            if (marker_sample_started)
+                *replace_before = marker_sample_started + REPLACE_WINDOW_NS;
+            return ktime_get();
         }
         if (value != MARKER)
             break;
-        seen_marker = 1;
-        checked = now;
+        marker_sample_started = sample_started;
         __asm__ volatile("yield" ::: "memory");
     }
     return 0;
@@ -180,8 +183,8 @@ static int pump(void *unused)
             last = 0;
             continue;
         }
-        int in_time = 0;
-        last = await_slot(slot, last, &in_time);
+        s64 replace_before = 0;
+        last = await_slot(slot, last, &replace_before);
         if (!last || !selected() || kthread_should_stop()) {
             cancel_marker(slot);
             __atomic_add_fetch(&relocks, 1, __ATOMIC_RELAXED);
@@ -189,15 +192,18 @@ static int pump(void *unused)
             continue;
         }
         u32 cursor = acquire(&tail);
-        if (!in_time) {
+        /* Read the live header before checking the final write deadline. */
+        if (cursor == acquire(&head)) {
+            __atomic_add_fetch(&underruns, 1, __ATOMIC_RELAXED);
+        } else if (!stock_header(slot)) {
+            __atomic_add_fetch(&header_changes, 1, __ATOMIC_RELAXED);
+        } else if (!replace_before || ktime_get() > replace_before) {
             __atomic_add_fetch(&late, 1, __ATOMIC_RELAXED);
-        } else if (cursor != acquire(&head) && stock_header(slot)) {
+        } else {
             write_slot(slot, queue[cursor % QUEUE_SLOTS]);
             __atomic_store_n(&last_slot_ns, (u64)last, __ATOMIC_RELEASE);
             __atomic_add_fetch(&frames_out, 1, __ATOMIC_RELEASE);
             release(&tail, cursor + 1U);
-        } else {
-            __atomic_add_fetch(&underruns, 1, __ATOMIC_RELAXED);
         }
         slot = (slot + 1U) % RING_SLOTS;
     }
@@ -221,7 +227,7 @@ static int dev_open(struct inode *unused, struct file *file)
 
     head = tail = partial = draining = writing = 0;
     frames_out = last_slot_ns = 0;
-    underruns = late = relocks = 0;
+    underruns = late = relocks = header_changes = 0;
     struct task_struct *task = kthread_create_on_node(pump, (void *)0, -1, "philips_mat_pump");
     if ((u64)task >= (u64)-4095L) {
         release(&owner, 0);
@@ -241,7 +247,8 @@ static int dev_release(struct inode *unused, struct file *file)
         kthread_stop(pump_task);
         pump_task = (void *)0;
         *(void **)((u8 *)file + 0xd8) = (void *)0;
-        _printk(LOG "closed frames=%lu late=%u underruns=%u relocks=%u\n", frames_out, late, underruns, relocks);
+        _printk(LOG "closed frames=%lu late=%u underruns=%u relocks=%u header_changes=%u\n",
+                frames_out, late, underruns, relocks, header_changes);
         release(&owner, 0);
     }
     return 0;
@@ -258,6 +265,7 @@ static ssize_t dev_read(struct file *unused, char *out, size_t bytes, loff_t *po
         .q_depth = queued(), .underruns = __atomic_load_n(&underruns, __ATOMIC_RELAXED),
         .already_ready = __atomic_load_n(&late, __ATOMIC_RELAXED),
         .relocks = __atomic_load_n(&relocks, __ATOMIC_RELAXED), .ring_active = (u32)selected(),
+        .header_changes = __atomic_load_n(&header_changes, __ATOMIC_RELAXED),
     };
     if (status.q_depth > QUEUE_SLOTS)
         status.q_depth = QUEUE_SLOTS;

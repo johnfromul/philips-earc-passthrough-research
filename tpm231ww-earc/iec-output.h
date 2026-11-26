@@ -40,7 +40,7 @@ static int iec_dump(const struct audio_stream *stream, int fd)
     if (!m)
         return -ENODEV;
     dprintf(fd, "Philips IEC MAT output: bursts=%u\n", m->mat_bursts_emitted);
-    pthread_mutex_unlock(&m->lock);
+    unlock_shim_stream(m);
     return 0;
 }
 
@@ -63,7 +63,7 @@ static int iec_set_parameters(struct audio_stream *stream, const char *keys)
         return -ENODEV;
     struct audio_stream *stock = &m->iec->stock->common;
     int result = stock->set_parameters ? stock->set_parameters(stock, keys) : 0;
-    pthread_mutex_unlock(&m->lock);
+    unlock_shim_stream(m);
     return result;
 }
 
@@ -89,7 +89,7 @@ static int iec_position(const struct audio_stream_out *out, uint64_t *frames, st
     if (!m)
         return -ENODEV;
     int result = iec_position_locked(m, frames, time);
-    pthread_mutex_unlock(&m->lock);
+    unlock_shim_stream(m);
     return result;
 }
 
@@ -121,7 +121,7 @@ static int iec_standby(struct audio_stream *stream)
     iec_stop_locked(m);
     struct audio_stream *stock = &m->iec->stock->common;
     int result = stock->standby ? stock->standby(stock) : 0;
-    pthread_mutex_unlock(&m->lock);
+    unlock_shim_stream(m);
     return result;
 }
 
@@ -132,7 +132,7 @@ static int iec_volume(struct audio_stream_out *out, float left, float right)
         return -ENODEV;
     struct audio_stream_out *stock = m->iec->stock;
     int result = stock->set_volume ? stock->set_volume(stock, left, right) : 0;
-    pthread_mutex_unlock(&m->lock);
+    unlock_shim_stream(m);
     return result;
 }
 
@@ -193,7 +193,7 @@ static ssize_t iec_write(struct audio_stream_out *out, const void *buffer, size_
             }
         }
     }
-    pthread_mutex_unlock(&m->lock);
+    unlock_shim_stream(m);
     return result ? result : (ssize_t)size;
 }
 

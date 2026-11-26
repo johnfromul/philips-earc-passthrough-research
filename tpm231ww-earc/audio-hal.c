@@ -186,6 +186,9 @@ struct mat_stream_out {
     int (*flush_stock)(struct audio_stream_out *);
     int (*drain_stock)(struct audio_stream_out *, int);
     pthread_mutex_t lock;
+    /* Callback lifetime is protected by g_active_lock. */
+    unsigned int active_callbacks;
+    int closing;
     int fd;
     uint32_t resync_skips;
 
@@ -212,6 +215,7 @@ static int   (*g_orig_open_output_stream)(struct audio_hw_device *, int, uint32_
 static void  (*g_orig_close_output_stream)(struct audio_hw_device *, struct audio_stream_out *) = NULL;
 
 static pthread_mutex_t g_active_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t g_callbacks_idle = PTHREAD_COND_INITIALIZER;
 static struct mat_stream_out *g_mat_streams[MAX_SHIM_STREAMS];
 
 static int register_shim_stream(struct mat_stream_out *m)
@@ -237,6 +241,9 @@ static struct mat_stream_out *unregister_shim_stream(struct audio_stream_out *ou
         if (g_mat_streams[i] && g_mat_streams[i]->stream == out) {
             found = g_mat_streams[i];
             g_mat_streams[i] = NULL;
+            found->closing = 1;
+            while (found->active_callbacks)
+                pthread_cond_wait(&g_callbacks_idle, &g_active_lock);
             break;
         }
     }
@@ -251,12 +258,23 @@ static struct mat_stream_out *lock_shim_stream(const struct audio_stream_out *ou
     for (uint32_t i = 0; i < MAX_SHIM_STREAMS; i++) {
         if (g_mat_streams[i] && g_mat_streams[i]->stream == out) {
             found = g_mat_streams[i];
-            pthread_mutex_lock(&found->lock);
+            found->active_callbacks++;
             break;
         }
     }
     pthread_mutex_unlock(&g_active_lock);
+    if (found)
+        pthread_mutex_lock(&found->lock);
     return found;
+}
+
+static void unlock_shim_stream(struct mat_stream_out *m)
+{
+    pthread_mutex_unlock(&m->lock);
+    pthread_mutex_lock(&g_active_lock);
+    if (--m->active_callbacks == 0 && m->closing)
+        pthread_cond_broadcast(&g_callbacks_idle);
+    pthread_mutex_unlock(&g_active_lock);
 }
 
 static void mat_reset_packer_locked(struct mat_stream_out *m)
@@ -691,7 +709,7 @@ static ssize_t shim_write(struct audio_stream_out *out, const void *buffer, size
             }
         }
     }
-    pthread_mutex_unlock(&m->lock);
+    unlock_shim_stream(m);
     return accepted;
 }
 
@@ -703,7 +721,7 @@ static int shim_standby(struct audio_stream *stream)
     mat_close_fd_locked(m);
     mat_reset_packer_locked(m);
     int result = m->standby_stock(stream);
-    pthread_mutex_unlock(&m->lock);
+    unlock_shim_stream(m);
     return result;
 }
 
@@ -714,7 +732,7 @@ static int shim_pause(struct audio_stream_out *out)
         return -ENODEV;
     mat_close_fd_locked(m);
     int result = m->pause_stock(out);
-    pthread_mutex_unlock(&m->lock);
+    unlock_shim_stream(m);
     return result;
 }
 
@@ -726,7 +744,7 @@ static int shim_flush(struct audio_stream_out *out)
     mat_close_fd_locked(m);
     mat_reset_packer_locked(m);
     int result = m->flush_stock(out);
-    pthread_mutex_unlock(&m->lock);
+    unlock_shim_stream(m);
     return result;
 }
 
@@ -742,7 +760,7 @@ static int shim_drain(struct audio_stream_out *out, int type)
         mat_reset_packer_locked(m);
     }
     int result = m->drain_stock(out, type);
-    pthread_mutex_unlock(&m->lock);
+    unlock_shim_stream(m);
     return result;
 }
 
